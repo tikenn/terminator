@@ -1,0 +1,5 @@
+# Ignored Files for Deployment #
+################################
+
+# Config file for live server
+terminator.conf
