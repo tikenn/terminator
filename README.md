@@ -1,5 +1,5 @@
 # Terminator
-Backup and system maintenance for Linux systems and MySQL style databases.    It logs everything and only emails when something goes wrong.
+Backup and system maintenance for Debian-based systems and MySQL style databases.    It logs everything and only emails when something goes wrong.
 
 ## Quicklinks
 - [Quick Start](#quick-start)
