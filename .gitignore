@@ -6,3 +6,6 @@ terminator.conf
 
 # SSH Keys
 ssh_keys/
+
+# Log files
+log/*
