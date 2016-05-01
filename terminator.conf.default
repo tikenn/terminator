@@ -1,0 +1,64 @@
+#!/bin/bash
+##
+# Terminator: backup and maintenance system for servers
+# Copyright 2016 Tim Kennell Jr.
+# Licensed under the MIT License (http://opensource.org/licenses/MIT)
+##
+
+# --------------- #
+# Localhost Setup #
+# --------------- #
+
+# Location on server to store database and system backups
+# If not set, the location will default to $INSTALL_LOCATION/terminator/backups
+local_host_backup_dir=
+
+
+# ------------------ #
+# On-site Host Setup #
+# ------------------ #
+
+# Domain or IP of on-site backup host
+# If left blank, backup system will not copy to an external host
+on_site_host_domain=
+
+# SSH Port of on-site backup host
+# If left blank, backup system will not copy to an external host
+on_site_host_port=
+
+# SSH Key (IdentityFile) for logon to on-site backup host
+# If left blank, backup system will not copy to an external host
+on_site_host_ssh_key=
+
+# Location on server to store database and system backups
+# If left blank, backup system will not copy to an external host
+on_site_host_backup_dir=
+
+
+# ------------------- #
+# Off-site Host Setup #
+# ------------------- #
+
+# Domain or IP of on-site backup host
+# If left blank, backup system will not copy to an external host
+off_site_host_domain=
+
+# SSH Port of on-site backup host
+# If left blank, backup system will not copy to an external host
+off_site_host_port=
+
+# SSH Key (IdentityFile) for logon to on-site backup host
+# If left blank, backup system will not copy to an external host
+off_site_host_ssh_key=
+
+# Location on server to store database and system backups
+# If left blank, backup system will not copy to an external host
+off_site_host_backup_dir=
+
+
+# ------------------- #
+# Administrator Setup #
+# ------------------- #
+
+# Comma-separated list of emails for notification of errors
+mailto=
