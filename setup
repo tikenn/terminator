@@ -7,9 +7,9 @@
 
 cp terminator.conf.default terminator.conf
 
-# ----------------- #
-# Mailutils Install #
-# ----------------- #
+# ---------------------- #
+# Mail Utilities Install #
+# ---------------------- #
 
 # Check for "mailutils" by checking for mail and postfix
 # Install if not already installed
@@ -20,6 +20,14 @@ if ! which mail > /dev/null || ! which postfix > /dev/null ; then
 	sudo aptitude install -y mailutils
 fi
 
+# Check for and install mutt (mail utility software)
+# Install if not already installed
+# Note that this requires an account with admin privileges but no need to be
+#     root when running file
+if ! which mutt > /dev/null ; then
+	sudo aptitude update
+	sudo aptitude install -y mutt
+fi
 
 # ---------------- #
 # SSH key creation #

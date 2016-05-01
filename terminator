@@ -4,3 +4,73 @@
 # Copyright 2016 Tim Kennell Jr.
 # Licensed under the MIT License (http://opensource.org/licenses/MIT)
 ##
+
+# ------------ #
+# System Check #
+# ------------ #
+
+# Create log directory if not exists
+if ! [[ -d log ]] ; then
+	mkdir log
+fi
+
+# Set up log file
+log_file=log/$(date +"%F_%R").log
+touch "$log_file"
+
+# Check for terminator.conf file
+if ! [[ -f terminator.conf ]] ; then
+	echo "# System check" >> "$log_file"
+	echo "E: could not find 'terminator.conf'.  Please run 'setup'" >> \
+		"$log_file"
+
+	exit 1
+fi
+
+# Load in user configurations
+. ./terminator.conf
+
+error_flag=0
+email_body="List of errors during system maintenance\n"
+
+
+# ----------------- #
+# Automagic Updates #
+# ----------------- #
+
+# Update
+# echo "updating"
+echo "# aptitude update" >> "$log_file"
+aptitude update &>> "$log_file"
+echo >> "$log_file"
+
+# Upgrade
+# echo "upgrading"
+echo "# aptitude full-upgrade" >> "$log_file"
+aptitude -y full-upgrade &>> "$log_file"
+echo >> "$log_file"
+
+# Clean
+# echo "cleaning"
+echo "# aptitude clean" >> "$log_file"
+aptitude -y clean &>> "$log_file"
+echo >> "$log_file"
+
+# Email
+if grep -q 'E: \|W: ' "$log_file" ; then
+	error_flag=1
+	email_body+=" - System update and upgrade\n"
+fi
+
+
+# ------------------ #
+# Admin Error Emails #
+# ------------------ #
+
+# If errors and admin emails set, send email of error status
+if [[ -n "$mailto" ]] && [[ "$error_flag" == 1 ]] ; then
+	echo -e "$email_body" |
+	mutt -e "set from=terminator@$HOSTNAME.server realname='$HOSTNAME'" \
+		-s "$HOSTNAME System Maintenance Errors" \
+		-a "$log_file" -- "$mailto"
+fi
