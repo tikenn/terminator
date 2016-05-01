@@ -8,4 +8,4 @@ terminator.conf
 ssh_keys/
 
 # Log files
-log/**/*
+log/**
