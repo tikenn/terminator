@@ -81,7 +81,7 @@ mv_key() {
 ##     ssh_keys/terminator.on_site_host.key.pub
 create_key() {
 	# Reset user response on each function call
-	create_key_response=""
+	local create_key_response
 
 	# Read user input for creating on-site key until user gives valid response
 	while ! yes_no_response "$create_key_response" ; do
@@ -122,7 +122,7 @@ create_key "off_site_host"
 # Set initial value of variable to "nonsense" so that while loop runs
 cron_date=nonsense
 while ! date -d "$cron_date" &> /dev/null ; do
-	read -p "Time to run system maintenance [12:00 PM]: " cron_date
+	read -p "Time to run system maintenance [12:00 AM]: " cron_date
 
 	if ! date -d "$cron_date" &> /dev/null ; then
 		echo -en "\nI'm sorry, I didn't understand your response."
