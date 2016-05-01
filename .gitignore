@@ -1,0 +1,12 @@
+# Ignored Files for Deployment #
+################################
+
+# Config file for live server
+terminator.conf
+
+# SSH Keys
+ssh_keys/
+
+# Log files
+# !log/
+# log/**

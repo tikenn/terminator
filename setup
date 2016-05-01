@@ -1,0 +1,161 @@
+#!/bin/bash
+##
+# Terminator: backup and maintenance system for servers
+# Copyright 2016 Tim Kennell Jr.
+# Licensed under the MIT License (http://opensource.org/licenses/MIT)
+##
+
+cp terminator.conf.default terminator.conf
+
+# ----------------- #
+# Mailutils Install #
+# ----------------- #
+
+# Check for "mailutils" by checking for mail and postfix
+# Install if not already installed
+# Note that this requires an account with admin privileges but no need to be
+#     root when running file
+if ! which mail > /dev/null || ! which postfix > /dev/null ; then
+	sudo aptitude update
+	sudo aptitude install -y mailutils
+fi
+
+
+# ---------------- #
+# SSH key creation #
+# ---------------- #
+
+# Detects "y", "n", "yes", and "no" user response in a case-insensitive manner
+# param String $1
+## Ex: yes_response "y" --> returns 0
+## Ex: yes_response "yes" --> returns 0
+## Ex: yes_response "n" --> returns 0
+## Ex: yes_response "no" --> returns 0
+## Ex: yes_response "" --> returns 1
+## Ex: yes_response "gobble de guk" --> returns 1
+yes_no_response() {
+	if [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = y ]] || \
+	[[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = yes ]] || \
+	[[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = n ]] || \
+	[[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = no ]] ; then
+
+		return 0
+	else
+		return 1
+	fi
+}
+
+# Detect "y" or "yes" response as affirmative answer in case-insensitive manner
+# param String $1
+## Ex: yes_response "yes" --> returns 0
+## Ex: yes_response "no" --> returns 1
+## Ex: yes_response "gobble de guk" --> returns 1
+yes_response() {
+	if [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = y ]] || \
+	[[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = yes ]] ; then
+
+		return 0
+	else
+		return 1
+	fi
+}
+
+# Create specified directory for SSH keys and move keys to folder for 
+#     organization (create dir if not exists)
+# param Dir $1
+# param File $2
+## Ex: mv_key my.key --> mv my.key ssh_keys; mv my.key.pub ssh_keys
+mv_key() {
+	# create folder to contain key
+	if ! [[ -d ssh_keys ]] ; then
+		mkdir "$1"
+	fi
+
+	# move private and public key to folder
+	mv "$2" "$1"
+	mv "$2.pub" "$1"
+}
+
+# Create a 4096 bit ssh key with no passphrase using provided name ($1) and
+#     store in ssh_keys folder for organization
+# param String $1
+## Ex: create_key "on_site_host" --> ssh_keys/terminator.on_site_host.key,
+##     ssh_keys/terminator.on_site_host.key.pub
+create_key() {
+	# Reset user response on each function call
+	local create_key_response
+
+	# Read user input for creating on-site key until user gives valid response
+	while ! yes_no_response "$create_key_response" ; do
+
+		read -p "Create an $1 ssh key (y/n): " create_key_response
+
+		if ! yes_no_response "$create_key_response" ; then
+			echo -en "\nI'm sorry, I didn't understand your response.  "
+			echo -e "Please type \"y\" or \"n\""
+		fi
+	done
+
+	# Create on-site key if "y" or "yes"
+	if yes_response "$create_key_response" ; then
+		key_name="terminator.$1.key"
+		key_dir="ssh_keys/"
+		echo "$key_dir$key_name"
+
+		# create key
+		ssh-keygen -b 4096 -N '' -f "$key_name" -C "$key_name"
+
+		# Move key to folder for organization
+		mv_key "$key_dir" "$key_name"
+
+		# set variable in terminator.conf with key file
+		sed -i -r 's|'"$1"'_ssh_key=|&'"$key_dir$key_name"'|g' terminator.conf
+	fi
+}
+
+create_key "on_site_host"
+create_key "off_site_host"
+
+
+# ---------------- #
+# Install cron job #
+# ---------------- #
+
+# Request time to run system maintenance at until user gives valid response
+# Set initial value of variable to "nonsense" so that while loop runs
+cron_date=nonsense
+while ! date -d "$cron_date" &> /dev/null ; do
+	read -p "Time to run system maintenance [12:00 AM]: " cron_date
+
+	if ! date -d "$cron_date" &> /dev/null ; then
+		echo -en "\nI'm sorry, I didn't understand your response."
+		echo -e "\nPlease enter a time in the format HH:MM (AM/PM)"
+	fi
+done
+
+# Retrieve minutes and hours from user response for cron job
+cron_min=$(date -d "$cron_date" +"%M")
+cron_hour=$(date -d "$cron_date" +"%H")
+
+# Current location to know where to run script
+install_location=$(pwd)
+
+# Initial comment as header for cron job file
+cron_file_contents="# terminator system maintenance script cron job\n"
+cron_file_contents+="# Runs every day at user specificied time\n"
+cron_file_contents+="# Installs updates, backs up MySQL databases, and backs "
+cron_file_contents+="up system\n"
+
+cron_file_contents+="# Exports backups to on-site and off-site locations at "
+cron_file_contents+="user request\n\n"
+
+# Cron job parameters
+cron_file_contents+="# Run terminator system maintenance at user specified "
+cron_file_contents+="time\n"
+
+cron_file_contents+="$cron_min $cron_hour * * * root $install_location/"
+cron_file_contents+="terminator"
+
+# Place file into cron location
+echo -e "$cron_file_contents" > test_cron.txt
+# sudo echo -e "$cron_file_contents" > /etc/cron.d/terminator
