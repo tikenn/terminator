@@ -60,18 +60,20 @@ yes_response() {
 	fi
 }
 
-# Move keys to folder for organization (create dir if not exists)
-# param File $1
+# Create specified directory for SSH keys and move keys to folder for 
+#     organization (create dir if not exists)
+# param Dir $1
+# param File $2
 ## Ex: mv_key my.key --> mv my.key ssh_keys; mv my.key.pub ssh_keys
 mv_key() {
 	# create folder to contain key
 	if ! [[ -d ssh_keys ]] ; then
-		mkdir ssh_keys
+		mkdir "$1"
 	fi
 
 	# move private and public key to folder
-	mv "$1" ssh_keys
-	mv "$1.pub" ssh_keys
+	mv "$2" "$1"
+	mv "$2.pub" "$1"
 }
 
 # Create a 4096 bit ssh key with no passphrase using provided name ($1) and
@@ -97,16 +99,17 @@ create_key() {
 	# Create on-site key if "y" or "yes"
 	if yes_response "$create_key_response" ; then
 		key_name="terminator.$1.key"
+		key_dir="ssh_keys/"
+		echo "$key_dir$key_name"
 
 		# create key
 		ssh-keygen -b 4096 -N '' -f "$key_name" -C "$key_name"
 
 		# Move key to folder for organization
-		mv_key "$key_name"
+		mv_key "$key_dir" "$key_name"
 
 		# set variable in terminator.conf with key file
-		sed -r 's/'"$1"'_ssh_key=/&'"$key_name"'/g' terminator.conf > test_conf.txt
-		# sed -i -r 's/'"$1"'_ssh_key=/&'"$key_name"'/g' terminator.conf
+		sed -i -r 's|'"$1"'_ssh_key=|&'"$key_dir$key_name"'|g' terminator.conf
 	fi
 }
 
