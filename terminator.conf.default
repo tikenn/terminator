@@ -5,6 +5,15 @@
 # Licensed under the MIT License (http://opensource.org/licenses/MIT)
 ##
 
+# ------------------- #
+# Administrator Setup #
+# ------------------- #
+
+# Comma-separated list of emails for notification of errors
+# If not set, system will never send out emails, even if errors occur
+mailto=
+
+
 # --------------- #
 # Localhost Setup #
 # --------------- #
@@ -13,25 +22,37 @@
 # If not set, the location will default to $INSTALL_LOCATION/terminator/backups
 local_host_backup_dir=
 
+# Root user for MySQL database backup
+# If not set, database backup will not take place
+local_host_db_user=
+
+# Root user password for MySQL database backup
+# If not set, database backup will not take place
+local_host_db_pass=
+
 
 # ------------------ #
 # On-site Host Setup #
 # ------------------ #
 
 # Domain or IP of on-site backup host
-# If left blank, backup system will not copy to an external host
+# If left blank, system will not copy backups to an on-site host
 on_site_host_domain=
 
 # SSH Port of on-site backup host
-# If left blank, backup system will not copy to an external host
+# If left blank, system will not copy backups to an on-site host
 on_site_host_port=
 
+# User for on-site host login
+# If left blank, system will not copy backups to an on-site host
+on_site_host_user=
+
 # SSH Key (IdentityFile) for logon to on-site backup host
-# If left blank, backup system will not copy to an external host
+# If left blank, system will not copy backups to an on-site host
 on_site_host_ssh_key=
 
 # Location on server to store database and system backups
-# If left blank, backup system will not copy to an external host
+# If left blank, system will not copy backups to an on-site host
 on_site_host_backup_dir=
 
 
@@ -40,25 +61,22 @@ on_site_host_backup_dir=
 # ------------------- #
 
 # Domain or IP of on-site backup host
-# If left blank, backup system will not copy to an external host
+# If left blank, system will not copy backups to an off-site host
 off_site_host_domain=
 
 # SSH Port of on-site backup host
-# If left blank, backup system will not copy to an external host
+# If left blank, system will not copy backups to an off-site host
 off_site_host_port=
 
+# User for off-site host login
+# If left blank, system will not copy backups to an off-site host
+off_site_host_user=
+
 # SSH Key (IdentityFile) for logon to on-site backup host
-# If left blank, backup system will not copy to an external host
+# If left blank, system will not copy backups to an off-site host
 off_site_host_ssh_key=
 
 # Location on server to store database and system backups
-# If left blank, backup system will not copy to an external host
+# If left blank, system will not copy backups to an off-site host
 off_site_host_backup_dir=
 
-
-# ------------------- #
-# Administrator Setup #
-# ------------------- #
-
-# Comma-separated list of emails for notification of errors
-mailto=
