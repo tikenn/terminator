@@ -10,7 +10,7 @@ Backup and system maintenance for Linux systems and MySQL style databases.    It
 1. Put *terminator* on server (/opt/)
 2. Run ```setup```
 3. Fill out ```terminator.conf```
-4. Add public keys external backup hosts
+4. Add public keys to external backup hosts
 5. Sit back and relax
 
 # Getting Started
