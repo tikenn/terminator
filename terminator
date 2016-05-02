@@ -67,7 +67,7 @@ fi
 # Admin Error Emails #
 # ------------------ #
 
-# If errors and admin emails set, send email of error status
+# If errors and admin emails set, send email of error statuses
 if [[ -n "$mailto" ]] && [[ "$error_flag" == 1 ]] ; then
 	echo -e "$email_body" |
 	mutt -e "set from=terminator@$HOSTNAME.server realname='$HOSTNAME'" \
