@@ -15,7 +15,7 @@ if ! [[ -d log ]] ; then
 fi
 
 # Set up log file
-log_file=log/$(date +"%F_%R").log
+log_file=log/$HOSTNAME.$(date +"%F_%R").log
 touch "$log_file"
 
 # Check for terminator.conf file
@@ -56,12 +56,62 @@ echo "# aptitude clean" >> "$log_file"
 aptitude -y clean &>> "$log_file"
 echo >> "$log_file"
 
-# Email
+# If errors with update and upgrade, set error_flag for email and add error to 
+#     email body
 if grep -q 'E: \|W: ' "$log_file" ; then
 	error_flag=1
 	email_body+=" - System update and upgrade\n"
 fi
 
+
+# --------------- #
+# Database Backup #
+# --------------- #
+
+# Set default database backup directory to current location if not set in
+#     terminator.conf
+[[ -z "$local_host_backup_dir" ]] && local_host_backup_dir="$(pwd)"
+
+# Only attempt database backup if database credentials in terminator.conf
+if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
+
+	# Database backup directory structure list
+	db_backup_dir_str=(
+		"backups/mysqldump/daily"
+		"backups/mysqldump/weekly"
+		"backups/mysqldump/monthly"
+		"backups/mysqldump/yearly"
+	)
+
+	# Create directory structure
+	for dir in "${db_backup_dir_str[@]}" ; do
+		if ! [[ -d "$local_host_backup_dir/$dir" ]] ; then
+			mkdir -p "$local_host_backup_dir/$dir"
+		fi
+	done
+
+	# File used for backup
+	db_backup_file="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
+
+	# run backup
+	echo "# mysqldump" >> "$log_file"
+	# mysqldump -u "$local_host_db_user" -p"$local_host_db_pass" --all-databases \
+	# 	1> "$local_host_backup_dir/backups/mysqldump/daily/$db_backup_file" \
+	# 	2>> "$log_file"
+	mysqldump -u "$local_host_db_user" -p"burp" --all-databases \
+		1> "$local_host_backup_dir/backups/mysqldump/daily/$db_backup_file" \
+		2>> "$log_file"
+	echo >> "$log_file"
+
+	# If errors with update and upgrade, set error_flag for email and add error 
+	#     to email body
+	# Delete empty database backup file
+	if grep -q 'mysqldump: ' "$log_file" ; then
+		error_flag=1
+		email_body+=" - Database backup\n"
+		rm "$local_host_backup_dir/backups/mysqldump/daily/$db_backup_file"
+	fi
+fi
 
 # ------------------ #
 # Admin Error Emails #
