@@ -103,7 +103,7 @@ if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
 		2>> "$log_file"
 	echo >> "$log_file"
 
-	# If errors with update and upgrade, set error_flag for email and add error 
+	# If errors with database backup, set error_flag for email and add error 
 	#     to email body
 	# Delete empty database backup file
 	if grep -q 'mysqldump: ' "$log_file" ; then
