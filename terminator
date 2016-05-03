@@ -72,6 +72,8 @@ fi
 #     terminator.conf
 [[ -z "$local_host_backup_dir" ]] && local_host_backup_dir="$(pwd)"
 
+# TODO: rsync function
+
 # Only attempt database backup if database credentials in terminator.conf
 if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
 
@@ -91,16 +93,15 @@ if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
 	done
 
 	# File used for backup
-	db_backup_file="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
+	db_backup_file="$local_host_backup_dir/backups/mysqldump/daily/"
+	db_backup_file+="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
 
 	# run backup
 	echo "# mysqldump" >> "$log_file"
 	# mysqldump -u "$local_host_db_user" -p"$local_host_db_pass" --all-databases \
-	# 	1> "$local_host_backup_dir/backups/mysqldump/daily/$db_backup_file" \
-	# 	2>> "$log_file"
+	# 	1> "$db_backup_file" 2>> "$log_file"
 	mysqldump -u "$local_host_db_user" -p"burp" --all-databases \
-		1> "$local_host_backup_dir/backups/mysqldump/daily/$db_backup_file" \
-		2>> "$log_file"
+		1> "$db_backup_file" 2>> "$log_file"
 	echo >> "$log_file"
 
 	# If errors with database backup, set error_flag for email and add error 
@@ -109,8 +110,16 @@ if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
 	if grep -q 'mysqldump: ' "$log_file" ; then
 		error_flag=1
 		email_body+=" - Database backup\n"
-		rm "$local_host_backup_dir/backups/mysqldump/daily/$db_backup_file"
+		rm "$db_backup_file"
 	fi
+
+	# If db_backup_file exists, no errors
+	if [[ -f "$db_backup_file" ]] ; then
+		# TODO:  copy to appropriate directories
+
+	fi
+
+
 fi
 
 # ------------------ #
