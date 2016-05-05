@@ -19,6 +19,14 @@ week_backup_day=
 # Default is the first day of the month
 month_backup_day=
 
+# Month of the year to perform yearly backup on
+# Default is 1
+year_backup_month=
+
+# Day of the year to perform yearly backup on
+# Default is 1
+year_backup_day=
+
 
 # ------------------- #
 # Administrator Setup #
