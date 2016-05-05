@@ -72,7 +72,24 @@ fi
 #     terminator.conf
 [[ -z "$local_host_backup_dir" ]] && local_host_backup_dir="$(pwd)"
 
-# TODO: rsync function
+
+# Determines if more than a daily backup is necessary based on current date and 
+#     presence previous backup for that time frame
+# param Boolean $1 -- backup for time frame necessary
+# param Date $2 -- known date for backup at time frame based on current date
+# param Dir $3 -- directory storing backups for time frame
+## Ex: 
+### 
+### 
+scheduled_backup() {
+	recent_backup_date=$(ls -alFtr --full-time $3 | awk 'FNR == 2 {print $6}')
+
+
+}
+
+curate_backup_dir() {
+
+}
 
 # Only attempt database backup if database credentials in terminator.conf
 if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
@@ -116,11 +133,18 @@ if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
 	# If db_backup_file exists, no errors
 	if [[ -f "$db_backup_file" ]] ; then
 		# TODO:  copy to appropriate directories
-
+		
 	fi
 
 
 fi
+
+
+# ------------------------- #
+# Rsync with External Hosts #
+# ------------------------- #
+
+
 
 # ------------------ #
 # Admin Error Emails #
