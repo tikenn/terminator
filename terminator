@@ -99,7 +99,6 @@ if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
 		"backups/mysqldump/daily"
 		"backups/mysqldump/weekly"
 		"backups/mysqldump/monthly"
-		"backups/mysqldump/yearly"
 	)
 
 	# Create directory structure
@@ -133,7 +132,7 @@ if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
 	# If db_backup_file exists, no errors
 	if [[ -f "$db_backup_file" ]] ; then
 		# TODO:  copy to appropriate directories
-		
+
 	fi
 
 
