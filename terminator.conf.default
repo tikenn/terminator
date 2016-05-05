@@ -27,6 +27,10 @@ year_backup_month=
 # Default is 1
 year_backup_day=
 
+# Number of yearly backups to keep in storage
+# Default is set to 5
+yearly_backup_rollover=
+
 
 # ------------------- #
 # Administrator Setup #
