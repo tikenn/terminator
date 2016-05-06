@@ -9,23 +9,22 @@
 # Scheduling Setup #
 # ---------------- #
 
-# Day of the week for backup
-# 1 is Monday
-# Default is 1 (Monday)
-week_backup_day=
+# Start date for all backups (daily, weekly, monthly, and yearly)
+# Automatically filled in when terminator is setup
+# Only change if absolutely necessary
+backup_start=
 
-# Day of the month for backup
-# Last day of the month is used if greater than the number of days in the month
-# Default is the first day of the month
-month_backup_day=
+# Number of daily backups to keep in storage
+# Default is 7
+daily_backup_rollover=
 
-# Month of the year to perform yearly backup on
-# Default is 1
-year_backup_month=
+# Number of weekly backups to keep in storage
+# Default is 4
+weekly_backup_rollover=
 
-# Day of the year to perform yearly backup on
-# Default is 1
-year_backup_day=
+# Number of monthly backups to keep in storage
+# Default is 12
+monthly_backup_rollover=
 
 # Number of yearly backups to keep in storage
 # Default is set to 5

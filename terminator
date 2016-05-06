@@ -58,7 +58,7 @@ echo >> "$log_file"
 
 # If errors with update and upgrade, set error_flag for email and add error to 
 #     email body
-if grep -q 'E: \|W: ' "$log_file" ; then
+if grep -q "E: \|W: " "$log_file" ; then
 	error_flag=1
 	email_body+=" - System update and upgrade\n"
 fi
@@ -68,75 +68,163 @@ fi
 # Database Backup #
 # --------------- #
 
+# Set default rollovers for scheduled backups if not filled out in 
+#     terminator.conf
+[[ -z "$daily_backup_rollover" ]] && daily_backup_rollover=7
+[[ -z "$weekly_backup_rollover" ]] && weekly_backup_rollover=4
+[[ -z "$monthly_backup_rollover" ]] && monthly_backup_rollover=12
+[[ -z "$yearly_backup_rollover" ]] && yearly_backup_rollover=5
+
 # Set default database backup directory to current location if not set in
 #     terminator.conf
 [[ -z "$local_host_backup_dir" ]] && local_host_backup_dir="$(pwd)"
 
+# Checks for db credentials in terminator.conf
+# Returns false if either db_user or db_pass is not set
+db_backup_requested() {
+	if [[ -z "$local_host_db_user" ]] || [[ -z "$local_host_db_pass" ]] ; then
+		return 1
+	fi
 
-# Determines if more than a daily backup is necessary based on current date and 
-#     presence previous backup for that time frame
-# param Boolean $1 -- backup for time frame necessary
-# param Date $2 -- known date for backup at time frame based on current date
-# param Dir $3 -- directory storing backups for time frame
-## Ex: 
-### 
-### 
-scheduled_backup() {
-	recent_backup_date=$(ls -alFtr --full-time $3 | awk 'FNR == 2 {print $6}')
-
-
+	return 0
 }
 
-curate_backup_dir() {
+# Creates the database backup directories from an array listing the desired 
+#     directories
+# param Dir $1 -- parent directory to contain backups
+# param Array $2 -- array of backups directories
+## Ex: create_db_backup_dirs ("dir1" "dir2") --> ./dir1/ ./dir2/
+create_db_backup_dirs() {
+	local parent_dir="$1"
+	
+	shift
+	local db_backup_dirs=("$@")
 
+	# Create directory structure
+	for dir in "${db_backup_dirs[@]}" ; do
+		if ! [[ -d "$parent_dir/$dir" ]] ; then
+			mkdir -p "$parent_dir/$dir"
+		fi
+	done
 }
 
-# Only attempt database backup if database credentials in terminator.conf
-if [[ -n "$local_host_db_user" ]] && [[ -n "$local_host_db_pass" ]] ; then
+# Determines if previous backup was missed
+# param Dir $1 -- directory storing backups for time frame
+# param Date $2 -- date backup was supposed to occur on for time frame
+## Ex: current_date="2016-01-01"
+### missed_backup "backup/mysqldump/weekly" "2016-01-01" --> 1
+### missed_backup "backup/mysqldump/weekly" "2016-01-02" --> 0
+missed_backup() {
+	# most recent backup date that should have occurred
+	local required_backup_date=$(date -d "$2" +"%Y%m%d")
+
+	# most recent backup date known to have occurred in chosen directory
+	local known_backup_date=$(date -d "$(ls -lFtr --full-time $1 \
+		| awk 'FNR == 2 {print $6}')" +"%Y%m%d")
+	
+	# If a backup has not occurred at the required time (required time greater
+	#     than last known backup time), then backup was missed
+	if (( "$required_backup_date" > "$known_backup_date" )) ; then
+		return 1
+	fi
+
+	return 0
+}
+
+# Schedules the weekly backup if current weekday is the same as weekday of the
+#     backup_start date in terminator.conf by copying backup file to specified
+#     directory
+# param Date $1 -- backup_start date
+# param Dir $2 -- destination directory
+# param File $3 -- backup file to copy
+weekly_backup() {
+	local backup_start_date="$1"
+	local destination_dir="$2"
+	local db_backup_file="$3"
+
+	local current_date=$(date +"%F")
+	local current_weekday=$(date +"%A")
+
+	local backup_start_weekday=$(date -d "$1" +"%A")
+	local past_backup_date=$(date -d "last $backup_start_weekday" +"%F")
+
+	if missed_backup "$destination_dir" "$past_backup_date" || \
+		(( "$current_weekday" == "$backup_start_weekday" )) ; then
+
+		cp "$db_backup_file" "$destination_dir"
+		echo "DB Info: performed weekly backup" >> "$log_file"
+	fi
+}
+
+# curate_backups() {
+
+# }
+
+backup_db() {
+	# Check for backup schedule variable
+	if [[ -z "$backup_start" ]] ; then
+		echo "backup_start missing"
+		echo -n "DB Backup Fatal Error: no backup start date.  " >> "$log_file"
+		echo "Terminating backup." >> "$log_file"
+		return 1
+	fi
 
 	# Database backup directory structure list
-	db_backup_dir_str=(
+	db_backup_dirs=(
 		"backups/mysqldump/daily"
 		"backups/mysqldump/weekly"
 		"backups/mysqldump/monthly"
+		"backups/mysqldump/yearly"
 	)
 
-	# Create directory structure
-	for dir in "${db_backup_dir_str[@]}" ; do
-		if ! [[ -d "$local_host_backup_dir/$dir" ]] ; then
-			mkdir -p "$local_host_backup_dir/$dir"
-		fi
-	done
+	create_db_backup_dirs "$local_host_backup_dir" "${db_backup_dirs[@]}"
 
 	# File used for backup
 	db_backup_file="$local_host_backup_dir/backups/mysqldump/daily/"
 	db_backup_file+="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
 
 	# run backup
-	echo "# mysqldump" >> "$log_file"
-	# mysqldump -u "$local_host_db_user" -p"$local_host_db_pass" --all-databases \
-	# 	1> "$db_backup_file" 2>> "$log_file"
-	mysqldump -u "$local_host_db_user" -p"burp" --all-databases \
+	mysqldump -u "$local_host_db_user" -p"$local_host_db_pass" --all-databases \
 		1> "$db_backup_file" 2>> "$log_file"
-	echo >> "$log_file"
 
-	# If errors with database backup, set error_flag for email and add error 
-	#     to email body
-	# Delete empty database backup file
-	if grep -q 'mysqldump: ' "$log_file" ; then
+	# fatal db backup error
+	if grep -q "mysqldump: " "$log_file" ; then
+		# email flags and message
 		error_flag=1
 		email_body+=" - Database backup\n"
+		
+		# remove empty db file
 		rm "$db_backup_file"
+
+		# log fatal error
+		echo "DB Backup Fatal Error: terminated DB backup" >> "$log_file"
+		return 1
 	fi
 
-	# If db_backup_file exists, no errors
-	if [[ -f "$db_backup_file" ]] ; then
-		# TODO:  copy to appropriate directories
+	# compress backup
+	gzip "$db_backup_file"
 
-	fi
+	# Perform timed backups if appropriate
+	weekly_backup
 
+	
+	# TODO:  copy to appropriate directories
+	# TODO: add sections for weekly, monthly and yearly backup
+	# TODO: put in appropriate check points
+}
 
+# Demarcate log file section
+echo "# mysqldump" >> "$log_file"
+
+# Only attempt database backup if database credentials in terminator.conf
+if db_backup_requested ; then
+	backup_db
+else
+	echo "DB Notice:  no database credentials set.  Skipping..." >> "$log_file"
 fi
+
+# End database section of log file
+echo >> "$log_file"
 
 
 # ------------------------- #

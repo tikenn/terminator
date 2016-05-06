@@ -117,17 +117,22 @@ create_key() {
 		mv_key "$key_dir" "$key_name"
 
 		# set variable in terminator.conf with key file
-		sed -i -r 's|'"$1"'_ssh_key=|&'"$key_dir$key_name"'|g' terminator.conf
+		sed -i -r 's|'"$1"'=|&'"$key_dir$key_name"'|g' terminator.conf
 	fi
 }
 
-create_key "on_site_host"
-create_key "off_site_host"
+# see terminator.conf for key names
+create_key "on_site_host_ssh_key"
+create_key "off_site_host_ssh_key"
 
 
-# ---------------- #
-# Install cron job #
-# ---------------- #
+# --------------------- #
+# Schedule and cron job #
+# --------------------- #
+
+# Demarcate install date for backup schedule
+install_date=$(date +"%F")
+sed -i -r 's|backup_start=|&'"$install_date"'|g' terminator.conf
 
 # Request time to run system maintenance at until user gives valid response
 # Set initial value of variable to "nonsense" so that while loop runs
