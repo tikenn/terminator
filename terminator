@@ -80,7 +80,7 @@ fi
 [[ -z "$local_host_backup_dir" ]] && local_host_backup_dir="$(pwd)"
 
 # Checks for db credentials in terminator.conf
-# Returns false if either db_user or db_pass is not set
+# Returns false if either db_user or db_pass is not set (no db to backup)
 db_backup_requested() {
 	if [[ -z "$local_host_db_user" ]] || [[ -z "$local_host_db_pass" ]] ; then
 		return 1
@@ -115,26 +115,36 @@ create_db_backup_dirs() {
 ### missed_backup "backup/mysqldump/weekly" "2016-01-01" --> 1
 ### missed_backup "backup/mysqldump/weekly" "2016-01-02" --> 0
 missed_backup() {
+	# Backup directory
+	local backup_dir="$1"
+
 	# most recent backup date that should have occurred
 	local required_backup_date=$(date -d "$2" +"%Y%m%d")
 
-	# most recent backup date known to have occurred in chosen directory
-	local known_backup_date=$(date -d "$(ls -lFtr --full-time $1 \
-		| awk 'FNR == 2 {print $6}')" +"%Y%m%d")
+	# Check if directory is empty because date will set to current date if it 
+	#     receives a null value
+	if [[ "$(ls -A "$backup_dir")" ]] ; then
+		# Directory filled, check date of most recent file
+		local known_backup_date="$(date -d "$(ls -lFtr --full-time \
+			"$backup_dir" | awk 'FNR == 2 {print $6}')" +"%Y%m%d")"
+	else
+		# Directory is empty, set date to nothing manually
+		local known_backup_date=0
+	fi
 	
 	# If a backup has not occurred at the required time (required time greater
 	#     than last known backup time), then backup was missed
 	if (( "$required_backup_date" > "$known_backup_date" )) ; then
-		return 1
+		return 0
 	fi
 
-	return 0
+	return 1
 }
 
 # Schedules the weekly backup if current weekday is the same as weekday of the
 #     backup_start date in terminator.conf by copying backup file to specified
 #     directory
-# param Date $1 -- backup_start date
+# param Date $1 -- backup_start date located in terminator.conf
 # param Dir $2 -- destination directory
 # param File $3 -- backup file to copy
 weekly_backup() {
@@ -142,17 +152,49 @@ weekly_backup() {
 	local destination_dir="$2"
 	local db_backup_file="$3"
 
-	local current_date=$(date +"%F")
-	local current_weekday=$(date +"%A")
+	local current_weekday="$(date +"%A")"
 
-	local backup_start_weekday=$(date -d "$1" +"%A")
-	local past_backup_date=$(date -d "last $backup_start_weekday" +"%F")
+	local backup_start_weekday="$(date -d "$backup_start_date" +"%A")"
+	local past_backup_date="$(date -d "last $backup_start_weekday" +"%F")"
 
+	# Need to backup if last one was missed or if it's the same day of the week
+	#     as program installation (backup_start)
 	if missed_backup "$destination_dir" "$past_backup_date" || \
-		(( "$current_weekday" == "$backup_start_weekday" )) ; then
+		[[ "$current_weekday" == "$backup_start_weekday" ]] ; then
 
 		cp "$db_backup_file" "$destination_dir"
 		echo "DB Info: performed weekly backup" >> "$log_file"
+	fi
+}
+
+# Schedules the monthly backup if current day of the month is the same as day of
+#     the month of the backup_start date in terminator.conf by copying backup 
+#     file to specified directory
+# param Date $1 -- backup_start date located in terminator.conf
+# param Dir $2 -- destination directory
+# param File $3 -- backup file to copy
+monthly_backup() {
+	local backup_start_date="$1"
+	local destination_dir="$2"
+	local db_backup_file="$3"
+
+	local current_day_of_month="$(date +"%d")"
+	local current_month="$(date +"%m")"
+
+	# http://stackoverflow.com/questions/12381501/how-to-use-bash-to-get-the-last-day-of-each-month-for-the-current-year-without-u
+	local current_month_total_days="$(date -d "$current_month/1 \
+		+ 1 month - 1 day")"
+
+	local backup_start_day_of_month="$(date -d "$backup_start_date" +"%d")"
+	local past_backup_date="$(date -d "last $backup_start_weekday" +"%F")"
+
+	# Need to backup if last one was missed or if it's the same day of the week
+	#     as program installation (backup_start)
+	if missed_backup "$destination_dir" "$past_backup_date" || \
+		[[ "$current_weekday" == "$backup_start_weekday" ]] ; then
+
+		cp "$db_backup_file" "$destination_dir"
+		echo "DB Info: performed monthly backup" >> "$log_file"
 	fi
 }
 
@@ -205,7 +247,8 @@ backup_db() {
 	gzip "$db_backup_file"
 
 	# Perform timed backups if appropriate
-	weekly_backup
+	weekly_backup "$backup_start" "backups/mysqldump/weekly" \
+		"$db_backup_file.gz"
 
 	
 	# TODO:  copy to appropriate directories
