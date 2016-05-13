@@ -167,6 +167,8 @@ weekly_backup() {
 	fi
 }
 
+# TODO: test function
+
 # Schedules the monthly backup if current day of the month is the same as day of
 #     the month of the backup_start date in terminator.conf by copying backup 
 #     file to specified directory
@@ -276,10 +278,8 @@ backup_db() {
 	weekly_backup "$backup_start" \
 		"$local_host_backup_dir/backups/mysqldump/weekly" "$db_backup_file.gz"
 
-	
-	# TODO:  copy to appropriate directories
-	# TODO: add sections for weekly, monthly and yearly backup
-	# TODO: put in appropriate check points
+	# TODO: call monthly backup
+
 }
 
 # Demarcate log file section
