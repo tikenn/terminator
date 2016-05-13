@@ -180,18 +180,44 @@ monthly_backup() {
 
 	local current_day_of_month="$(date +"%d")"
 	local current_month="$(date +"%m")"
+	local past_month="$(date -d "last month" +"%m")"
+
+	# Preserve year for when new year occurs
+	local past_month_year="$(date -d "last month" +"%Y")"
 
 	# http://stackoverflow.com/questions/12381501/how-to-use-bash-to-get-the-last-day-of-each-month-for-the-current-year-without-u
 	local current_month_total_days="$(date -d "$current_month/1 \
 		+ 1 month - 1 day")"
+	local past_month_total_days="$(date -d "$current_month/1 \
+		- 1 day")"
 
 	local backup_start_day_of_month="$(date -d "$backup_start_date" +"%d")"
-	local past_backup_date="$(date -d "last $backup_start_weekday" +"%F")"
 
-	# Need to backup if last one was missed or if it's the same day of the week
-	#     as program installation (backup_start)
+	# If backup_start_day_of_month is greater than the total days in the past
+	#     month, then the scheduled backup would have occurred on the last day
+	#     of the past month
+	if (("$backup_start_day_of_month" > "$past_month_total_days")) ; then
+		local past_backup_date="$(date -d "$past_month_year-$past_month-\
+			$past_month_total_days" +"%F")"
+	else
+		local past_backup_date="$(date -d "$past_month_year-$past_month-\
+			$backup_start_day_of_month" +"%F")"
+	fi
+
+	# If backup_start_day_of_month is greater than the total days in the CURRENT
+	#     month, then the scheduled backup day will be the last day of the 
+	#     current month
+	if (("$backup_start_day_of_month" > "$current_month_total_days")) ; then
+		local scheduled_backup_day="$current_month_total_days"
+	else
+		local scheduled_backup_day="$backup_start_day_of_month"
+	fi
+
+	# Need to backup if last one was missed or if it's the same day of the month
+	#     (or last day of the month, whichever comes first) as program 
+	#     installation (backup_start)
 	if missed_backup "$destination_dir" "$past_backup_date" || \
-		[[ "$current_weekday" == "$backup_start_weekday" ]] ; then
+		[[ "$current_day_of_month" == "$scheduled_backup_day" ]] ; then
 
 		cp "$db_backup_file" "$destination_dir"
 		echo "DB Info: performed monthly backup" >> "$log_file"
@@ -247,8 +273,8 @@ backup_db() {
 	gzip "$db_backup_file"
 
 	# Perform timed backups if appropriate
-	weekly_backup "$backup_start" "backups/mysqldump/weekly" \
-		"$db_backup_file.gz"
+	weekly_backup "$backup_start" \
+		"$local_host_backup_dir/backups/mysqldump/weekly" "$db_backup_file.gz"
 
 	
 	# TODO:  copy to appropriate directories
