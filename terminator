@@ -232,6 +232,8 @@ monthly_backup() {
 	fi
 }
 
+# TODO: test this function
+
 # Schedules the yearly backup if current day of the year is the same as the day 
 #     of the year as the backup_start date in terminator.conf by copying backup 
 #     file to specified directory
@@ -255,7 +257,14 @@ yearly_backup() {
 	local past_backup_date="$(date -d "$past_backup_year-\
 		$(date -d "$backup_start" +"%m-%d")" +"%F")"
 	
+	# Need to backup if last one was missed or if it's the same day of the year
+	#     as program installation (backup_start)
+	if missed_backup "$destination_dir" "$past_backup_date" || \
+		(("$current_month_day" == "$backup_start_month_day")) ; then
 
+		cp "$db_backup_file" "$destination_dir"
+		echo "DB Info: performed yearly backup" >> "$log_file"
+	fi
 
 }
 
@@ -312,6 +321,8 @@ backup_db() {
 		"$local_host_backup_dir/backups/mysqldump/weekly" "$db_backup_file.gz"
 	monthly_backup "$backup_start" \
 		"$local_host_backup_dir/backups/mysqldump/monthly" "$db_backup_file.gz"
+	yearly_backup "$backup_start" \
+		"$local_host_backup_dir/backups/mysqldump/yearly" "$db_backup_file.gz"
 
 	# TODO: call monthly backup
 
