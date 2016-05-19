@@ -167,11 +167,9 @@ weekly_backup() {
 	fi
 }
 
-# TODO: test function
-
-# Schedules the monthly backup if current day of the month is the same as day of
-#     the month of the backup_start date in terminator.conf by copying backup 
-#     file to specified directory
+# Schedules the monthly backup if current day of the month is the same as the
+#     day of the month as the backup_start date in terminator.conf by copying
+#     backup file to specified directory
 # param Date $1 -- backup_start date located in terminator.conf
 # param Dir $2 -- destination directory
 # param File $3 -- backup file to copy
@@ -182,27 +180,35 @@ monthly_backup() {
 
 	local current_day_of_month="$(date +"%d")"
 	local current_month="$(date +"%m")"
-	local past_month="$(date -d "last month" +"%m")"
-
-	# Preserve year for when new year occurs
-	local past_month_year="$(date -d "last month" +"%Y")"
 
 	# http://stackoverflow.com/questions/12381501/how-to-use-bash-to-get-the-last-day-of-each-month-for-the-current-year-without-u
 	local current_month_total_days="$(date -d "$current_month/1 \
-		+ 1 month - 1 day")"
-	local past_month_total_days="$(date -d "$current_month/1 \
-		- 1 day")"
+		+ 1 month - 1 day" +"%d")"
 
 	local backup_start_day_of_month="$(date -d "$backup_start_date" +"%d")"
+
+	# If backup date for current month is passed, look back to same month
+	# If backup date for current month is not passed, look back to previous 
+	#     month
+	if (("$current_day_of_month" > "$backup_start_day_of_month")) ; then
+		local backup_month="$current_month"
+		local backup_month_year="$(date +"%Y")"
+		local backup_month_total_days="$current_month_total_days"
+	else
+		local backup_month="$(date -d "last month" +"%m")"
+		local backup_month_year="$(date -d "last month" +"%Y")"
+		local backup_month_total_days="$(date -d "$current_month/1 \
+			- 1 day" +"%d")"
+	fi
 
 	# If backup_start_day_of_month is greater than the total days in the past
 	#     month, then the scheduled backup would have occurred on the last day
 	#     of the past month
-	if (("$backup_start_day_of_month" > "$past_month_total_days")) ; then
+	if (("$backup_start_day_of_month" > "$backup_month_total_days")) ; then
 		local past_backup_date="$(date -d "$past_month_year-$past_month-\
-			$past_month_total_days" +"%F")"
+			$backup_month_total_days" +"%F")"
 	else
-		local past_backup_date="$(date -d "$past_month_year-$past_month-\
+		local past_backup_date="$(date -d "$backup_month_year-$backup_month-\
 			$backup_start_day_of_month" +"%F")"
 	fi
 
@@ -224,6 +230,33 @@ monthly_backup() {
 		cp "$db_backup_file" "$destination_dir"
 		echo "DB Info: performed monthly backup" >> "$log_file"
 	fi
+}
+
+# Schedules the yearly backup if current day of the year is the same as the day 
+#     of the year as the backup_start date in terminator.conf by copying backup 
+#     file to specified directory
+# param Date $1 -- backup_start date located in terminator.conf
+# param Dir $2 -- destination directory
+# param File $3 -- backup file to copy
+yearly_backup() {
+	local backup_start_date="$1"
+	local destination_dir="$2"
+	local db_backup_file="$3"
+
+	local current_month_day="$(date +"%m%d")"
+	local backup_start_month_day="$(date -d "$backup_start" +"%m%d")"
+
+	if (("$current_month_day" > "$backup_start_month_day")) ; then
+		local past_backup_year="$(date +"%Y")"
+	else
+		local past_backup_year="$(date -d "last year" +"%Y")"
+	fi
+
+	local past_backup_date="$(date -d "$past_backup_year-\
+		$(date -d "$backup_start" +"%m-%d")" +"%F")"
+	
+
+
 }
 
 # curate_backups() {
@@ -277,6 +310,8 @@ backup_db() {
 	# Perform timed backups if appropriate
 	weekly_backup "$backup_start" \
 		"$local_host_backup_dir/backups/mysqldump/weekly" "$db_backup_file.gz"
+	monthly_backup "$backup_start" \
+		"$local_host_backup_dir/backups/mysqldump/monthly" "$db_backup_file.gz"
 
 	# TODO: call monthly backup
 
