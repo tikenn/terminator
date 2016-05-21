@@ -15,7 +15,7 @@ if ! [[ -d log ]] ; then
 fi
 
 # Set up log file
-log_file=log/$HOSTNAME.$(date +"%F_%R").log
+log_file=log/$HOSTNAME.$(date +"%F_%T").log
 touch "$log_file"
 
 # Check for terminator.conf file
@@ -68,12 +68,43 @@ fi
 # Database Backup #
 # --------------- #
 
+# Demarcate log file section
+echo "# mysqldump" >> "$log_file"
+
+# Sets a variable to a given value by passing the variable name as a string to 
+#     this function followed by the value to be set if not already set
+# param Var (as string) $1 -- variable name passed as string
+# param String $2 -- default value to be set if variable not already set
+## Ex:  set_default_rollover "new_var" "new_value" --> new_var="new_value"
+set_default_rollover() {
+	local var_rollover="$1"
+	local default_value="$2"
+
+	# User has set variable to number
+	if [[ -n ${!var_rollover} ]] && [[ ${!var_rollover} =~ "^[0-9]+$" ]]; then
+		return 0
+
+	# User has not set variable to number
+	elif [[ -n ${!var_rollover} ]] && ! [[ ${!var_rollover} =~ "^[0-9]+$" ]]
+	then
+		echo -n "DB Backup Notice: " >> "$log_file"
+		echo -n "$var_rollover value not recognized as an integer; "\
+			>> "$log_file"
+		echo "setting to default of $default_value" >> "$log_file"
+	fi
+
+	# if variable not set or filled with non integer, set to default value
+	eval "$var_rollover"\="$default_value"
+	return 1
+}
+
 # Set default rollovers for scheduled backups if not filled out in 
-#     terminator.conf
-[[ -z "$daily_backup_rollover" ]] && daily_backup_rollover=7
-[[ -z "$weekly_backup_rollover" ]] && weekly_backup_rollover=4
-[[ -z "$monthly_backup_rollover" ]] && monthly_backup_rollover=12
-[[ -z "$yearly_backup_rollover" ]] && yearly_backup_rollover=5
+#     terminator.conf and check for numbers as values
+set_default_rollover "daily_backup_rollover" "7"
+set_default_rollover "weekly_backup_rollover" "4"
+set_default_rollover "monthly_backup_rollover" "12"
+set_default_rollover "yearly_backup_rollover" "5"
+
 
 # Set default database backup directory to current location if not set in
 #     terminator.conf
@@ -125,7 +156,7 @@ missed_backup() {
 	#     receives a null value
 	if [[ "$(ls -A "$backup_dir")" ]] ; then
 		# Directory filled, check date of most recent file
-		local known_backup_date="$(date -d "$(ls -lFtr --full-time \
+		local known_backup_date="$(date -d "$(ls -lFt --full-time \
 			"$backup_dir" | awk 'FNR == 2 {print $6}')" +"%Y%m%d")"
 	else
 		# Directory is empty, set date to nothing manually
@@ -139,6 +170,32 @@ missed_backup() {
 	fi
 
 	return 1
+}
+
+# Deletes oldest backup file in specified directory if more files are present 
+#     than the listed number
+# param Dir $1 -- directory storing backups to be curated
+# param Int $2 -- maximum number of files in backup location
+## Ex: 8 files in directory (dir.bak)
+### curate_backups dir.bak 7 --> deletes oldest file in dir.bak
+curate_backups() {
+	backup_dir="$1"
+	backup_dir_rollover="$2"
+
+	file_count="$(ls -1 "$backup_dir" | wc -l)"
+
+	# Remove files until only the amount in rollover exist
+	while (("$file_count" > "$backup_dir_rollover")) ; do
+		# Find oldest file and remove it
+		oldest_file="$(ls -lFtr "$backup_dir" | awk 'FNR == 2 {print $9}')"
+		
+		echo "DB Backup Info: removing old file in $backup_dir . . . " \
+			>> "$log_file"
+		rm -rf "$backup_dir/$oldest_file" 2>> "$log_file"
+		
+		# Reset count
+		file_count="$(ls -1 "$backup_dir" | wc -l)"
+	done
 }
 
 # Schedules the weekly backup if current weekday is the same as weekday of the
@@ -163,7 +220,9 @@ weekly_backup() {
 		[[ "$current_weekday" == "$backup_start_weekday" ]] ; then
 
 		cp "$db_backup_file" "$destination_dir"
-		echo "DB Info: performed weekly backup" >> "$log_file"
+		echo "DB Backup Info: performed weekly backup" >> "$log_file"
+
+		curate_backups "$destination_dir" "$weekly_backup_rollover"
 	fi
 }
 
@@ -183,9 +242,9 @@ monthly_backup() {
 
 	# http://stackoverflow.com/questions/12381501/how-to-use-bash-to-get-the-last-day-of-each-month-for-the-current-year-without-u
 	local current_month_total_days="$(date -d "$current_month/1 \
-		+ 1 month - 1 day" +"%d")"
+		+ 1 month - 1 day" +"%-d")"
 
-	local backup_start_day_of_month="$(date -d "$backup_start_date" +"%d")"
+	local backup_start_day_of_month="$(date -d "$backup_start_date" +"%-d")"
 
 	# If backup date for current month is passed, look back to same month
 	# If backup date for current month is not passed, look back to previous 
@@ -228,11 +287,11 @@ monthly_backup() {
 		[[ "$current_day_of_month" == "$scheduled_backup_day" ]] ; then
 
 		cp "$db_backup_file" "$destination_dir"
-		echo "DB Info: performed monthly backup" >> "$log_file"
+		echo "DB Backup Info: performed monthly backup" >> "$log_file"
+
+		curate_backups "$destination_dir" "$monthly_backup_rollover"
 	fi
 }
-
-# TODO: test this function
 
 # Schedules the yearly backup if current day of the year is the same as the day 
 #     of the year as the backup_start date in terminator.conf by copying backup 
@@ -245,8 +304,8 @@ yearly_backup() {
 	local destination_dir="$2"
 	local db_backup_file="$3"
 
-	local current_month_day="$(date +"%m%d")"
-	local backup_start_month_day="$(date -d "$backup_start" +"%m%d")"
+	local current_month_day="$(date +"%-m%d")"
+	local backup_start_month_day="$(date -d "$backup_start" +"%-m%d")"
 
 	if (("$current_month_day" > "$backup_start_month_day")) ; then
 		local past_backup_year="$(date +"%Y")"
@@ -263,14 +322,13 @@ yearly_backup() {
 		(("$current_month_day" == "$backup_start_month_day")) ; then
 
 		cp "$db_backup_file" "$destination_dir"
-		echo "DB Info: performed yearly backup" >> "$log_file"
+		echo "DB Backup Info: performed yearly backup" >> "$log_file"
+
+		curate_backups "$destination_dir" "$yearly_backup_rollover"
 	fi
 
 }
 
-# curate_backups() {
-
-# }
 
 backup_db() {
 	# Check for backup schedule variable
@@ -298,6 +356,7 @@ backup_db() {
 	# run backup
 	mysqldump -u "$local_host_db_user" -p"$local_host_db_pass" --all-databases \
 		1> "$db_backup_file" 2>> "$log_file"
+	echo "DB Backup Info: performed daily backup" >> "$log_file"
 
 	# fatal db backup error
 	if grep -q "mysqldump: " "$log_file" ; then
@@ -323,19 +382,14 @@ backup_db() {
 		"$local_host_backup_dir/backups/mysqldump/monthly" "$db_backup_file.gz"
 	yearly_backup "$backup_start" \
 		"$local_host_backup_dir/backups/mysqldump/yearly" "$db_backup_file.gz"
-
-	# TODO: call monthly backup
-
 }
-
-# Demarcate log file section
-echo "# mysqldump" >> "$log_file"
 
 # Only attempt database backup if database credentials in terminator.conf
 if db_backup_requested ; then
 	backup_db
 else
-	echo "DB Notice:  no database credentials set.  Skipping..." >> "$log_file"
+	echo "DB Backup Notice:  no database credentials set.  Skipping..." \
+		>> "$log_file"
 fi
 
 # End database section of log file
