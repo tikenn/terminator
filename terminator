@@ -198,6 +198,31 @@ curate_backups() {
 	done
 }
 
+# Schedules the daily backup by performing mysqldump and gzipping file, errors
+#     out if no access
+# param String $1 -- root user for db backup
+# param String $2 -- root user password for db backup
+# param File $3 -- name of backup file to store backup
+daily_backup() {
+	local db_user="$1"
+	local db_pass="$2"
+	local db_backup_file="$3"
+
+	# run backup
+	mysqldump -u "$db_user" -p"$db_pass" --all-databases \
+		1> "$db_backup_file" 2>> "$log_file"
+	echo "DB Backup Info: performed daily backup" >> "$log_file"
+
+	# fatal db backup error
+	if grep -q "mysqldump: " "$log_file" ; then
+		return 1
+	fi
+
+	# compress backup
+	gzip "$db_backup_file"
+	return 0
+}
+
 # Schedules the weekly backup if current weekday is the same as weekday of the
 #     backup_start date in terminator.conf by copying backup file to specified
 #     directory
@@ -329,37 +354,40 @@ yearly_backup() {
 
 }
 
-
+# Backs up database using scheduling functions, does not accept params
 backup_db() {
 	# Check for backup schedule variable
 	if [[ -z "$backup_start" ]] ; then
-		echo "backup_start missing"
 		echo -n "DB Backup Fatal Error: no backup start date.  " >> "$log_file"
 		echo "Terminating backup." >> "$log_file"
+		
+		error_flag=1
+		email_body+=" - Database backup\n"
+
 		return 1
 	fi
-
-	# Database backup directory structure list
-	db_backup_dirs=(
-		"backups/mysqldump/daily"
-		"backups/mysqldump/weekly"
-		"backups/mysqldump/monthly"
-		"backups/mysqldump/yearly"
-	)
-
-	create_db_backup_dirs "$local_host_backup_dir" "${db_backup_dirs[@]}"
 
 	# File used for backup
 	db_backup_file="$local_host_backup_dir/backups/mysqldump/daily/"
 	db_backup_file+="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
 
-	# run backup
-	mysqldump -u "$local_host_db_user" -p"$local_host_db_pass" --all-databases \
-		1> "$db_backup_file" 2>> "$log_file"
-	echo "DB Backup Info: performed daily backup" >> "$log_file"
+	# Perform initial daily backup, and, if successful, perform other timed
+	#     backups
+	if daily_backup "$local_host_db_user" "$local_host_db_pass" \
+		"$db_backup_file" ; then
 
-	# fatal db backup error
-	if grep -q "mysqldump: " "$log_file" ; then
+		# Perform timed backups if appropriate
+		weekly_backup "$backup_start" \
+			"$local_host_backup_dir/backups/mysqldump/weekly" \
+			"$db_backup_file.gz"
+		monthly_backup "$backup_start" \
+			"$local_host_backup_dir/backups/mysqldump/monthly" \
+			"$db_backup_file.gz"
+		yearly_backup "$backup_start" \
+			"$local_host_backup_dir/backups/mysqldump/yearly" \
+			"$db_backup_file.gz"
+	
+	else
 		# email flags and message
 		error_flag=1
 		email_body+=" - Database backup\n"
@@ -369,23 +397,24 @@ backup_db() {
 
 		# log fatal error
 		echo "DB Backup Fatal Error: terminated DB backup" >> "$log_file"
+
 		return 1
 	fi
 
-	# compress backup
-	gzip "$db_backup_file"
-
-	# Perform timed backups if appropriate
-	weekly_backup "$backup_start" \
-		"$local_host_backup_dir/backups/mysqldump/weekly" "$db_backup_file.gz"
-	monthly_backup "$backup_start" \
-		"$local_host_backup_dir/backups/mysqldump/monthly" "$db_backup_file.gz"
-	yearly_backup "$backup_start" \
-		"$local_host_backup_dir/backups/mysqldump/yearly" "$db_backup_file.gz"
+	return 0
 }
 
 # Only attempt database backup if database credentials in terminator.conf
 if db_backup_requested ; then
+	# Database backup directory structure list
+	db_backup_dirs=(
+		"backups/mysqldump/daily"
+		"backups/mysqldump/weekly"
+		"backups/mysqldump/monthly"
+		"backups/mysqldump/yearly"
+	)
+	create_db_backup_dirs "$local_host_backup_dir" "${db_backup_dirs[@]}"
+
 	backup_db
 else
 	echo "DB Backup Notice:  no database credentials set.  Skipping..." \
@@ -399,7 +428,27 @@ echo >> "$log_file"
 # ------------------------- #
 # Rsync with External Hosts #
 # ------------------------- #
+on_site_host_exist() {
+	if [[ -n "$on_site_host_domain" ]] && [[ -n "$on_site_host_port" ]] && \
+		[[ -n "$on_site_host_user" ]] && [[ -n "$on_site_host_ssh_key" ]] && \
+		[[ -n "$on_site_host_backup_dir" ]] ; then
 
+		return 0
+	fi
+
+	return 1
+}
+
+off_site_host_exist() {
+	if [[ -n "$off_site_host_domain" ]] && [[ -n "$off_site_host_port" ]] && \
+		[[ -n "$off_site_host_user" ]] && [[ -n "$off_site_host_ssh_key" ]] && \
+		[[ -n "$off_site_host_backup_dir" ]] ; then
+
+		return 0
+	fi
+
+	return 1
+}
 
 
 # ------------------ #
