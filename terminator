@@ -439,7 +439,7 @@ echo "# Remote backups" >> "$log_file"
 # param Var (as string) $4 -- backup user of host
 # param Var (as string) $5 -- host ssh key (no passphrase allowed)
 # param Var (as string) $6 -- backup directory on remote host
-host_ok() {
+rsync_host() {
 	local host_type="$1"
 	local domain="$2"
 	local port="$3"
@@ -490,30 +490,28 @@ host_ok() {
 		echo "reached; check host login parameters and remote server"
 
 		return 1
+	
+	# Everything is good, backup to remote
+	else
+		rsync -az --delete -e "ssh -F /dev/null -p ${!port} \
+			-i ${!ssh_key}" $local_host_backup_dir/ \
+			${!user}@${!domain}:${!backup_dir} \
+			2>> "$log_file"
+
+		echo "backing up to $host_type host"
+
 	fi
 
 	return 0
 }
 
 # On site host backup
-if host_ok "on-site" "on_site_host_domain" "on_site_host_port" \
+rsync_host "on-site" "on_site_host_domain" "on_site_host_port" \
 	"on_site_host_user" "on_site_host_ssh_key" "on_site_host_backup_dir"
-then
-	
-	echo "backing up to on site host"
-else
-	echo "Rsync notice: no on-site host credentials.  Skipping . . ."
-fi
 
 # Off site host backup
-if host_ok "off-site" "off_site_host_domain" "off_site_host_port" \
+rsync_host "off-site" "off_site_host_domain" "off_site_host_port" \
 	"off_site_host_user" "off_site_host_ssh_key" "off_site_host_backup_dir"
-then
-
-	echo "backing up to off site host"
-else
-	echo "Rsync notice: no off-site host credentials.  Skipping . . ."
-fi
 
 
 # ------------------ #
