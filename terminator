@@ -417,7 +417,7 @@ if db_backup_requested ; then
 
 	backup_db
 else
-	echo "DB Backup Notice:  no database credentials set.  Skipping..." \
+	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
 		>> "$log_file"
 fi
 
@@ -428,27 +428,92 @@ echo >> "$log_file"
 # ------------------------- #
 # Rsync with External Hosts #
 # ------------------------- #
-on_site_host_exist() {
-	if [[ -n "$on_site_host_domain" ]] && [[ -n "$on_site_host_port" ]] && \
-		[[ -n "$on_site_host_user" ]] && [[ -n "$on_site_host_ssh_key" ]] && \
-		[[ -n "$on_site_host_backup_dir" ]] ; then
 
-		return 0
+echo "# Remote backups" >> "$log_file"
+
+# Checks existence of credentials for a backup host and ability to 
+#     login
+# param String $1 -- "on-site" or "off-site"
+# param Var (as string) $2 -- domain name of host
+# param Var (as string) $3 -- SSH port of host
+# param Var (as string) $4 -- backup user of host
+# param Var (as string) $5 -- host ssh key (no passphrase allowed)
+# param Var (as string) $6 -- backup directory on remote host
+host_ok() {
+	local host_type="$1"
+	local domain="$2"
+	local port="$3"
+	local user="$4"
+	local ssh_key="$5"
+	local backup_dir="$6"
+
+	# Credentials not present, assuming no on-site backup requested
+	if ! [[ -n ${!domain} ]] || ! [[ -n ${!port} ]] || ! [[ -n ${!user} ]] || \
+		! [[ -n ${!ssh_key} ]] || ! [[ -n ${!backup_dir} ]] ; then
+
+		echo -n "Remote backup notice: no $host_type host login parameters.  " \
+			>> "$log_file"
+		echo "Skipping . . . " >> "$log_file"
+
+		return 1
+
+	# SSH key isn't a real file
+	elif ! [[ -f ${!ssh_key} ]] ; then
+		echo "Remote backup error: the ${!ssh_key} SSH key does not exist" \
+			>> "$log_file"
+
+		return 1
+
+	# SSH key is encrypted and can't be used
+	elif grep -q "ENCRYPTED" ${!ssh_key} ; then
+		error_flag=1
+		email_body=" - Remote backup\n"
+
+		echo -n "Remote backup error: $host_type host ssh key encrypted.  " \
+			>> "$log_file"
+		echo "Can't login to server." >> "$log_file"
+
+		return 1
+
+	# Remote host unable to be logged into
+	elif ! ssh -q -F /dev/null ${!user}@${!host} -p ${!port} -i ${!ssh_key}
+	then
+		error_flag=1
+		email_body=" - Remote backup\n"
+
+		echo -n "Remote backup error: $host_type backup host unable to be " \
+			>> "$log_file"
+		echo "reached; check host login parameters and remote server" \
+			>> "$log_file"
+
+		echo -n "Remote backup error: $host_type backup host unable to be "
+		echo "reached; check host login parameters and remote server"
+
+		return 1
 	fi
 
-	return 1
+	return 0
 }
 
-off_site_host_exist() {
-	if [[ -n "$off_site_host_domain" ]] && [[ -n "$off_site_host_port" ]] && \
-		[[ -n "$off_site_host_user" ]] && [[ -n "$off_site_host_ssh_key" ]] && \
-		[[ -n "$off_site_host_backup_dir" ]] ; then
+# On site host backup
+if host_ok "on-site" "on_site_host_domain" "on_site_host_port" \
+	"on_site_host_user" "on_site_host_ssh_key" "on_site_host_backup_dir"
+then
+	
+	echo "backing up to on site host"
+else
+	echo "Rsync notice: no on-site host credentials.  Skipping . . ."
+fi
 
-		return 0
-	fi
+# Off site host backup
+if host_ok "off-site" "off_site_host_domain" "off_site_host_port" \
+	"off_site_host_user" "off_site_host_ssh_key" "off_site_host_backup_dir"
+then
 
-	return 1
-}
+	echo "backing up to off site host"
+else
+	echo "Rsync notice: no off-site host credentials.  Skipping . . ."
+fi
 
 
 # ------------------ #
