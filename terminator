@@ -143,9 +143,9 @@ create_db_backup_dirs() {
 # param Dir $1 -- directory storing backups for time frame
 # param Date $2 -- date backup was supposed to occur on for time frame
 ## Ex: current_date="2016-01-01"
-### missed_backup "backup/mysqldump/weekly" "2016-01-01" --> 1
-### missed_backup "backup/mysqldump/weekly" "2016-01-02" --> 0
-missed_backup() {
+### missed_local_backup "backup/mysqldump/weekly" "2016-01-01" --> 1
+### missed_local_backup "backup/mysqldump/weekly" "2016-01-02" --> 0
+missed_local_backup() {
 	# Backup directory
 	local backup_dir="$1"
 
@@ -241,7 +241,7 @@ weekly_backup() {
 
 	# Need to backup if last one was missed or if it's the same day of the week
 	#     as program installation (backup_start)
-	if missed_backup "$destination_dir" "$past_backup_date" || \
+	if missed_local_backup "$destination_dir" "$past_backup_date" || \
 		[[ "$current_weekday" == "$backup_start_weekday" ]] ; then
 
 		cp "$db_backup_file" "$destination_dir"
@@ -308,7 +308,7 @@ monthly_backup() {
 	# Need to backup if last one was missed or if it's the same day of the month
 	#     (or last day of the month, whichever comes first) as program 
 	#     installation (backup_start)
-	if missed_backup "$destination_dir" "$past_backup_date" || \
+	if missed_local_backup "$destination_dir" "$past_backup_date" || \
 		[[ "$current_day_of_month" == "$scheduled_backup_day" ]] ; then
 
 		cp "$db_backup_file" "$destination_dir"
@@ -343,7 +343,7 @@ yearly_backup() {
 	
 	# Need to backup if last one was missed or if it's the same day of the year
 	#     as program installation (backup_start)
-	if missed_backup "$destination_dir" "$past_backup_date" || \
+	if missed_local_backup "$destination_dir" "$past_backup_date" || \
 		(("$current_month_day" == "$backup_start_month_day")) ; then
 
 		cp "$db_backup_file" "$destination_dir"
@@ -416,6 +416,7 @@ if db_backup_requested ; then
 	create_db_backup_dirs "$local_host_backup_dir" "${db_backup_dirs[@]}"
 
 	backup_db
+
 else
 	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
 		>> "$log_file"
@@ -431,87 +432,268 @@ echo >> "$log_file"
 
 echo "# Remote backups" >> "$log_file"
 
-# Checks existence of credentials for a backup host and ability to 
-#     login
-# param String $1 -- "on-site" or "off-site"
-# param Var (as string) $2 -- domain name of host
-# param Var (as string) $3 -- SSH port of host
-# param Var (as string) $4 -- backup user of host
-# param Var (as string) $5 -- host ssh key (no passphrase allowed)
-# param Var (as string) $6 -- backup directory on remote host
-rsync_host() {
-	local host_type="$1"
-	local domain="$2"
-	local port="$3"
-	local user="$4"
-	local ssh_key="$5"
-	local backup_dir="$6"
+# Sets the default scheduling for backup to remote hosts if not set by the user 
+#     or value is incorrectly entered
+# param Var (as string) $1 -- variable name passed as string
+# param String $2 -- default value to be set if variable not already set
+## Ex:  set_default_rsync_schedule "new_var" "new_value" --> new_var="new_value"
+set_default_rsync_schedule() {
+	local rsync_schedule="$1"
+	local default_value="$2"
 
-	# Credentials not present, assuming no on-site backup requested
-	if ! [[ -n ${!domain} ]] || ! [[ -n ${!port} ]] || ! [[ -n ${!user} ]] || \
-		! [[ -n ${!ssh_key} ]] || ! [[ -n ${!backup_dir} ]] ; then
+	# User set schedule variable correctly
+	if [[ -n ${!rsync_schedule} ]] && ( [[ ${!rsync_schedule} == "daily" ]] || \
+		[[ ${!rsync_schedule} == "weekly" ]] || \
+		[[ ${!rsync_schedule} == "monthly" ]] || \
+		[[ ${!rsync_schedule} == "yearly" ]] ) ; then
+
+		return 0
+	
+	# User set variable incorrectly
+	elif [[ -n ${!rsync_schedule} ]] && ! [[ ${!rsync_schedule} == "daily" ]] \
+		&& ! [[ ${!rsync_schedule} == "weekly" ]] && \
+		! [[ ${!rsync_schedule} == "monthly" ]] && \
+		! [[ ${!rsync_schedule} == "yearly" ]] ; then
+	
+		# Notify user that default value being set for remote backup schedule
+		echo -n "Remote Backup Notice: " >> "$log_file"
+		echo -n "$rsync_schedule value not recognized; " >> "$log_file"
+		echo "setting to default of $default_value" >> "$log_file"
+	fi
+
+	# if variable not set or set incorrectly, set to default value
+	eval "$rsync_schedule"\="$default_value"
+	return 1
+}
+
+set_default_rsync_schedule "on_site_backup_freq" "daily"
+set_default_rsync_schedule "off_site_backup_freq" "monthly"
+
+# Determines if previous remote backup was missed
+# param Var (as string) $1 -- domain name of host
+# param Var (as string) $2 -- SSH port of host
+# param Var (as string) $3 -- backup user of host
+# param Var (as string) $4 -- host ssh key (no passphrase allowed)
+# param Var (as string) $5 -- backup directory on remote host
+# param Date $6 -- date backup was supposed to occur on for time frame
+## Ex: current_date="2016-01-01"
+### missed_remote_backup ... "backup/mysqldump/weekly" "2016-01-01" --> 1
+### missed_remote_backup ... "backup/mysqldump/weekly" "2016-01-02" --> 0
+missed_remote_backup() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+	local required_backup_date="$(date -d "$6" +"%Y%m%d")"
+	local known_backup_date
+
+	known_backup_date=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes '
+		
+		# Check if directory is empty because date will set to current date if 
+		# it receives a null value
+		if [[ "$(ls -A '$backup_dir')" ]] ; then
+			# Directory filled, check date of most recent file
+			known_backup_date="$(date -d "$(ls -lFt --full-time \
+				'$backup_dir' | awk "FNR == 2 {print \$6}")" +"%Y%m%d")"
+		
+		else
+			# Directory is empty, set date to nothing manually
+			known_backup_date=0
+		fi
+
+		echo "$known_backup_date"
+	')
+
+	# If a backup has not occurred at the required time (required time greater
+	#     than last known backup time), then backup was missed
+	if (( "$required_backup_date" > "$known_backup_date" )) ; then
+		return 0
+	fi
+
+	return 1
+}
+
+# missed_remote_backup "$on_site_host_domain" "$on_site_host_port" \
+# 	"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir" \
+# 	"2016-06-04"
+
+# if missed_remote_backup "$on_site_host_domain" "$on_site_host_port" \
+# 	"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir" \
+# 	"2016-06-03" ; then
+
+# 	echo "missed"
+# else
+# 	echo "not missed"
+# fi
+
+
+# Checks existence of credentials for a backup host
+# param String $1 -- "on-site" or "off-site"
+# param Var (as string) $1 -- domain name of host
+# param Var (as string) $2 -- SSH port of host
+# param Var (as string) $3 -- backup user of host
+# param Var (as string) $4 -- host ssh key (no passphrase allowed)
+# param Var (as string) $5 -- backup directory on remote host
+remote_backup_requested() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	# Credentials not present, assuming no remote backup requested
+	if ! [[ -n "$domain" ]] || ! [[ -n "$port" ]] || ! [[ -n "$user" ]] || \
+		! [[ -n "$ssh_key" ]] || ! [[ -n "$backup_dir" ]] ; then
 
 		echo -n "Remote backup notice: no $host_type host login parameters.  " \
 			>> "$log_file"
 		echo "Skipping . . . " >> "$log_file"
 
 		return 1
-
-	# SSH key isn't a real file
-	elif ! [[ -f ${!ssh_key} ]] ; then
-		echo "Remote backup error: the ${!ssh_key} SSH key does not exist" \
-			>> "$log_file"
-
-		return 1
-
-	# SSH key is encrypted and can't be used
-	elif grep -q "ENCRYPTED" ${!ssh_key} ; then
-		error_flag=1
-		email_body=" - Remote backup\n"
-
-		echo -n "Remote backup error: $host_type host ssh key encrypted.  " \
-			>> "$log_file"
-		echo "Can't login to server." >> "$log_file"
-
-		return 1
-
-	# Remote host unable to be logged into
-	elif ! ssh -q -F /dev/null ${!user}@${!host} -p ${!port} -i ${!ssh_key}
-	then
-		error_flag=1
-		email_body=" - Remote backup\n"
-
-		echo -n "Remote backup error: $host_type backup host unable to be " \
-			>> "$log_file"
-		echo "reached; check host login parameters and remote server" \
-			>> "$log_file"
-
-		echo -n "Remote backup error: $host_type backup host unable to be "
-		echo "reached; check host login parameters and remote server"
-
-		return 1
-	
-	# Everything is good, backup to remote
-	else
-		rsync -az --delete -e "ssh -F /dev/null -p ${!port} \
-			-i ${!ssh_key}" $local_host_backup_dir/ \
-			${!user}@${!domain}:${!backup_dir} \
-			2>> "$log_file"
-
-		echo "backing up to $host_type host"
-
 	fi
 
 	return 0
 }
 
+# Checks SSH key for existance and unencrypted state
+# param String $1 -- "on-site" or "off-site"
+# param Var (as string) $1 -- host ssh key (no passphrase allowed)
+ssh_key_ok() {
+	local ssh_key="$1"
+
+	# SSH key isn't a real file
+	if ! [[ -f "$ssh_key" ]] ; then
+		echo "Remote backup error: the "$ssh_key" SSH key does not exist" \
+			>> "$log_file"
+
+		return 1
+
+	# SSH key is encrypted and can't be used
+	elif grep -q "ENCRYPTED" "$ssh_key" ; then
+		error_flag=1
+		email_body=" - Remote backup\n"
+
+		echo -n "Remote backup error: $ssh_key ssh key encrypted.  " \
+			>> "$log_file"
+		echo "Can't login to server." >> "$log_file"
+
+		return 1
+	fi
+
+	# ssh key ok
+	return 0
+}
+
+# Checks for ability to login to remote host
+# param String $1 -- "on-site" or "off-site"
+# param Var (as string) $1 -- domain name of host
+# param Var (as string) $2 -- SSH port of host
+# param Var (as string) $3 -- backup user of host
+# param Var (as string) $4 -- host ssh key (no passphrase allowed)
+host_ok() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+
+	# Remote host unable to be logged into
+	if ! ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" -o \
+		IdentitiesOnly=yes exit ; then
+
+		error_flag=1
+		email_body=" - Remote backup\n"
+
+		echo -n "Remote backup error: host $domain unable to be " \
+			>> "$log_file"
+		echo "reached; check host login parameters and remote server" \
+			>> "$log_file"
+
+		return 1
+
+	fi
+
+	# host is ok
+	return 0
+}
+
+
+# Checks existence of credentials for a backup host
+# param String $1 -- "on-site" or "off-site"
+# param Var (as string) $1 -- domain name of host
+# param Var (as string) $2 -- SSH port of host
+# param Var (as string) $3 -- backup user of host
+# param Var (as string) $4 -- host ssh key (no passphrase allowed)
+# param Var (as string) $5 -- backup directory on remote host
+backup_dir_ok() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	local file_owner
+	local file_permissions
+
+	file_owner=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes '
+		
+		file_owner="$(ls -alF '$backup_dir' | awk "FNR == 2 {print \$3}")"
+		echo "$file_owner"
+	')
+
+	file_permissions=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes '
+
+		file_permissions="$(ls -alF '$backup_dir' | awk "FNR == 2 {print \$1}")"
+		echo "$file_permissions"
+	')
+
+	if ! [[ "$file_owner" == "$user" ]] ; then
+		error_flag=1
+		email_body=" - Remote backup\n"
+
+		echo -n "Remote backup error: $backup_dir on host $domain not owned " \
+			>> "$log_file"
+		echo "by user listed in terminator.conf: $user" \
+			>> "$log_file"
+
+		return 1
+	fi
+
+	if ! [[ "$file_permissions" = "drwx*" ]] ; then
+		error_flag=1
+		email_body=" - Remote backup\n"
+
+		echo -n "Remote backup error: $backup_dir on host $domain does not " \
+			>> "$log_file"
+		echo "have at least 700 permissions or is not a directory" \
+			>> "$log_file"
+
+		return 1
+	fi
+
+	return 0
+}
+
+# TODO
+rsync_host() {
+	# Everything is good, backup to remote
+	rsync -az --delete -e "ssh -F /dev/null -p "$port" \
+		-i "$ssh_key"" $local_host_backup_dir/ \
+		"$user"@"$domain":"$backup_dir" \
+		2>> "$log_file"
+
+	echo "backing up to $host_type host"
+
+
+	return 0
+}
+
 # On site host backup
-rsync_host "on-site" "on_site_host_domain" "on_site_host_port" \
-	"on_site_host_user" "on_site_host_ssh_key" "on_site_host_backup_dir"
 
 # Off site host backup
-rsync_host "off-site" "off_site_host_domain" "off_site_host_port" \
-	"off_site_host_user" "off_site_host_ssh_key" "off_site_host_backup_dir"
 
 
 # ------------------ #
@@ -519,9 +701,9 @@ rsync_host "off-site" "off_site_host_domain" "off_site_host_port" \
 # ------------------ #
 
 # If errors and admin emails set, send email of error status
-if [[ -n "$mailto" ]] && [[ "$error_flag" == 1 ]] ; then
-	echo -e "$email_body" |
-	mutt -e "set from=terminator@$HOSTNAME.server realname='$HOSTNAME'" \
-		-s "$HOSTNAME System Maintenance Errors" \
-		-a "$log_file" -- "$mailto"
-fi
+# if [[ -n "$mailto" ]] && [[ "$error_flag" == 1 ]] ; then
+# 	echo -e "$email_body" |
+# 	mutt -e "set from=terminator@$HOSTNAME.server realname='$HOSTNAME'" \
+# 		-s "$HOSTNAME System Maintenance Errors" \
+# 		-a "$log_file" -- "$mailto"
+# fi
