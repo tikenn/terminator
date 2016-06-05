@@ -183,5 +183,4 @@ cron_file_contents+="$cron_min $cron_hour * * * root $install_location/"
 cron_file_contents+="terminator\n"
 
 # Place file into cron location
-# echo -e "$cron_file_contents" > test_cron.txt
 sudo echo -e "$cron_file_contents" > /etc/cron.d/terminator
