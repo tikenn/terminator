@@ -5,7 +5,17 @@
 # Licensed under the MIT License (http://opensource.org/licenses/MIT)
 ##
 
+# ------------- #
+# Initial Setup #
+# ------------- #
+
 cp terminator.conf.default terminator.conf
+
+# Current location to know where to run script
+# Writes to terminator script for cron job
+install_location=$(pwd)
+sed -i -r 's|(install_location=).*|\1'"$install_location"'|g' terminator
+
 
 # ---------------------- #
 # Mail Utilities Install #
@@ -107,7 +117,7 @@ create_key() {
 	# Create on-site key if "y" or "yes"
 	if yes_response "$create_key_response" ; then
 		key_name="terminator.$1.key"
-		key_dir="ssh_keys/"
+		key_dir="ssh_keys"
 		echo "$key_dir$key_name"
 
 		# create key
@@ -117,7 +127,8 @@ create_key() {
 		mv_key "$key_dir" "$key_name"
 
 		# set variable in terminator.conf with key file
-		sed -i -r 's|'"$1"'=|&'"$key_dir$key_name"'|g' terminator.conf
+		sed -i -r 's|('"$1"'=).*|\1'"$install_location/$key_dir/$key_name"'|g' \
+			terminator.conf
 	fi
 }
 
@@ -132,7 +143,7 @@ create_key "off_site_host_ssh_key"
 
 # Demarcate install date for backup schedule
 install_date=$(date +"%F")
-sed -i -r 's|backup_start=|&'"$install_date"'|g' terminator.conf
+sed -i -r 's|(backup_start=)|\1'"$install_date"'|g' terminator.conf
 
 # Request time to run system maintenance at until user gives valid response
 # Set initial value of variable to "nonsense" so that while loop runs
@@ -150,9 +161,6 @@ done
 cron_min=$(date -d "$cron_date" +"%M")
 cron_hour=$(date -d "$cron_date" +"%H")
 
-# Current location to know where to run script
-install_location=$(pwd)
-
 # Initial comment as header for cron job file
 cron_file_contents="# terminator system maintenance script cron job\n"
 cron_file_contents+="# Runs every day at user specificied time\n"
@@ -162,13 +170,18 @@ cron_file_contents+="up system\n"
 cron_file_contents+="# Exports backups to on-site and off-site locations at "
 cron_file_contents+="user request\n\n"
 
+# Set PATH variable for external programs
+cron_file_contents+="# Set PATH variable for external programs\n"
+cron_file_contents+="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:"
+cron_file_contents+="/sbin:/bin\n\n"
+
 # Cron job parameters
 cron_file_contents+="# Run terminator system maintenance at user specified "
 cron_file_contents+="time\n"
 
 cron_file_contents+="$cron_min $cron_hour * * * root $install_location/"
-cron_file_contents+="terminator"
+cron_file_contents+="terminator\n"
 
 # Place file into cron location
-echo -e "$cron_file_contents" > test_cron.txt
-# sudo echo -e "$cron_file_contents" > /etc/cron.d/terminator
+# echo -e "$cron_file_contents" > test_cron.txt
+sudo echo -e "$cron_file_contents" > /etc/cron.d/terminator

@@ -16,19 +16,19 @@ backup_start=
 
 # Number of daily backups to keep in storage
 # Default is 7
-daily_backup_rollover=
+daily_db_backup_rollover=
 
 # Number of weekly backups to keep in storage
 # Default is 4
-weekly_backup_rollover=
+weekly_db_backup_rollover=
 
 # Number of monthly backups to keep in storage
 # Default is 12
-monthly_backup_rollover=
+monthly_db_backup_rollover=
 
 # Number of yearly backups to keep in storage
 # Default is set to 5
-yearly_backup_rollover=
+yearly_db_backup_rollover=
 
 # Frequency of backup to on site backup location
 # Can take the values: "daily", "weekly", "monthly", or "yearly"

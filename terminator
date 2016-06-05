@@ -9,17 +9,15 @@
 # System Check #
 # ------------ #
 
-# Create log directory if not exists
-if ! [[ -d log ]] ; then
-	mkdir log
-fi
+# Specify path for cron job
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Set up log file
-log_file=log/$HOSTNAME.$(date +"%F_%T").log
-touch "$log_file"
+# Variable set automagically by setup script
+# Only change if absolutely necessary
+install_location=/home/tikenn/Desktop/terminator
 
 # Check for terminator.conf file
-if ! [[ -f terminator.conf ]] ; then
+if ! [[ -f "$install_location/terminator.conf" ]] ; then
 	echo "# System check" >> "$log_file"
 	echo "E: could not find 'terminator.conf'.  Please run 'setup'" >> \
 		"$log_file"
@@ -28,8 +26,18 @@ if ! [[ -f terminator.conf ]] ; then
 fi
 
 # Load in user configurations
-. ./terminator.conf
+. "$install_location/terminator.conf"
 
+# Create log directory if not exists
+if ! [[ -d log ]] ; then
+	mkdir "$install_location/log"
+fi
+
+# Set up log file
+log_file="$install_location/log/$HOSTNAME.$(date +"%F_%T").log"
+touch "$log_file"
+
+# Setup
 error_flag=0
 email_body="List of errors during system maintenance\n"
 
@@ -100,15 +108,16 @@ set_default_rollover() {
 
 # Set default rollovers for scheduled backups if not filled out in 
 #     terminator.conf and check for numbers as values
-set_default_rollover "daily_backup_rollover" "7"
-set_default_rollover "weekly_backup_rollover" "4"
-set_default_rollover "monthly_backup_rollover" "12"
-set_default_rollover "yearly_backup_rollover" "5"
+set_default_rollover "daily_db_backup_rollover" "7"
+set_default_rollover "weekly_db_backup_rollover" "4"
+set_default_rollover "monthly_db_backup_rollover" "12"
+set_default_rollover "yearly_db_backup_rollover" "5"
 
 
 # Set default database backup directory to current location if not set in
 #     terminator.conf
-[[ -z "$local_host_backup_dir" ]] && local_host_backup_dir="$(pwd)"
+[[ -z "$local_host_backup_dir" ]] && \
+	local_host_backup_dir="$install_location/backups"
 
 # Checks for db credentials in terminator.conf
 # Returns false if either db_user or db_pass is not set (no db to backup)
@@ -203,7 +212,7 @@ curate_backups() {
 # param String $1 -- root user for db backup
 # param String $2 -- root user password for db backup
 # param File $3 -- name of backup file to store backup
-daily_backup() {
+daily_db_backup() {
 	local db_user="$1"
 	local db_pass="$2"
 	local db_backup_file="$3"
@@ -223,45 +232,20 @@ daily_backup() {
 	return 0
 }
 
-# Schedules the weekly backup if current weekday is the same as weekday of the
-#     backup_start date in terminator.conf by copying backup file to specified
-#     directory
-# param Date $1 -- backup_start date located in terminator.conf
-# param Dir $2 -- destination directory
-# param File $3 -- backup file to copy
-weekly_backup() {
-	local backup_start_date="$1"
-	local destination_dir="$2"
-	local db_backup_file="$3"
-
-	local current_weekday="$(date +"%A")"
-
-	local backup_start_weekday="$(date -d "$backup_start_date" +"%A")"
+# Calculates the date that the previous weekly backup should have occurred based
+#     on the terminator install date
+# return Date
+previous_weekly_backup_date() {
+	local backup_start_weekday="$(date -d "$backup_start" +"%A")"
 	local past_backup_date="$(date -d "last $backup_start_weekday" +"%F")"
 
-	# Need to backup if last one was missed or if it's the same day of the week
-	#     as program installation (backup_start)
-	if missed_local_backup "$destination_dir" "$past_backup_date" || \
-		[[ "$current_weekday" == "$backup_start_weekday" ]] ; then
-
-		cp "$db_backup_file" "$destination_dir"
-		echo "DB Backup Info: performed weekly backup" >> "$log_file"
-
-		curate_backups "$destination_dir" "$weekly_backup_rollover"
-	fi
+	echo "$past_backup_date"
 }
 
-# Schedules the monthly backup if current day of the month is the same as the
-#     day of the month as the backup_start date in terminator.conf by copying
-#     backup file to specified directory
-# param Date $1 -- backup_start date located in terminator.conf
-# param Dir $2 -- destination directory
-# param File $3 -- backup file to copy
-monthly_backup() {
-	local backup_start_date="$1"
-	local destination_dir="$2"
-	local db_backup_file="$3"
-
+# Calculates the date that the previous monthly backup should have occurred
+#     based on the terminator install date
+# return Date
+previous_monthly_backup_date() {
 	local current_day_of_month="$(date +"%d")"
 	local current_month="$(date +"%m")"
 
@@ -269,7 +253,7 @@ monthly_backup() {
 	local current_month_total_days="$(date -d "$current_month/1 \
 		+ 1 month - 1 day" +"%-d")"
 
-	local backup_start_day_of_month="$(date -d "$backup_start_date" +"%-d")"
+	local backup_start_day_of_month="$(date -d "$backup_start" +"%-d")"
 
 	# If backup date for current month is passed, look back to same month
 	# If backup date for current month is not passed, look back to previous 
@@ -296,6 +280,74 @@ monthly_backup() {
 			$backup_start_day_of_month" +"%F")"
 	fi
 
+	echo "$past_backup_date"
+}
+
+# Calculates the date that the previous yearly backup should have occurred
+#     based on the terminator install date
+# return Date
+previous_yearly_backup_date() {
+	local current_month_day="$(date +"%-m%d")"
+	local backup_start_month_day="$(date -d "$backup_start" +"%-m%d")"
+
+	# If backup date for current year is passed, look back to same year
+	# If backup date for current year is not passed, look back to previous 
+	#     year
+	if (("$current_month_day" > "$backup_start_month_day")) ; then
+		local past_backup_year="$(date +"%Y")"
+	else
+		local past_backup_year="$(date -d "last year" +"%Y")"
+	fi
+
+	local past_backup_date="$(date -d "$past_backup_year-\
+		$(date -d "$backup_start" +"%m-%d")" +"%F")"
+
+	echo "$past_backup_date"
+}
+
+# Schedules the weekly backup if current weekday is the same as weekday of the
+#     backup_start date in terminator.conf by copying backup file to specified
+#     directory
+# param Dir $1 -- destination directory
+# param File $2 -- backup file to copy
+weekly_db_backup() {
+	local destination_dir="$1"
+	local db_backup_file="$2"
+
+	local current_weekday="$(date +"%A")"
+	local backup_start_weekday="$(date -d "$backup_start" +"%A")"
+
+	# Need to backup if last one was missed or if it's the same day of the week
+	#     as program installation (backup_start)
+	if missed_local_backup "$destination_dir" \
+		"$(previous_weekly_backup_date)" || \
+		[[ "$current_weekday" == "$backup_start_weekday" ]] ; then
+
+		cp "$db_backup_file" "$destination_dir"
+		echo "DB Backup Info: performed weekly backup" >> "$log_file"
+
+		curate_backups "$destination_dir" "$weekly_db_backup_rollover"
+	fi
+}
+
+# Schedules the monthly backup if current day of the month is the same as the
+#     day of the month as the backup_start date in terminator.conf by copying
+#     backup file to specified directory
+# param Dir $1 -- destination directory
+# param File $2 -- backup file to copy
+monthly_db_backup() {
+	local destination_dir="$1"
+	local db_backup_file="$2"
+
+	local current_day_of_month="$(date +"%-d")"
+	local current_month="$(date +"%m")"
+
+	# http://stackoverflow.com/questions/12381501/how-to-use-bash-to-get-the-last-day-of-each-month-for-the-current-year-without-u
+	local current_month_total_days="$(date -d "$current_month/1 \
+		+ 1 month - 1 day" +"%-d")"
+
+	local backup_start_day_of_month="$(date -d "$backup_start" +"%-d")"
+
 	# If backup_start_day_of_month is greater than the total days in the CURRENT
 	#     month, then the scheduled backup day will be the last day of the 
 	#     current month
@@ -308,50 +360,40 @@ monthly_backup() {
 	# Need to backup if last one was missed or if it's the same day of the month
 	#     (or last day of the month, whichever comes first) as program 
 	#     installation (backup_start)
-	if missed_local_backup "$destination_dir" "$past_backup_date" || \
+	if missed_local_backup "$destination_dir" \
+		"$(previous_monthly_backup_date)" || \
 		[[ "$current_day_of_month" == "$scheduled_backup_day" ]] ; then
 
 		cp "$db_backup_file" "$destination_dir"
 		echo "DB Backup Info: performed monthly backup" >> "$log_file"
 
-		curate_backups "$destination_dir" "$monthly_backup_rollover"
+		curate_backups "$destination_dir" "$monthly_db_backup_rollover"
 	fi
 }
 
 # Schedules the yearly backup if current day of the year is the same as the day 
 #     of the year as the backup_start date in terminator.conf by copying backup 
 #     file to specified directory
-# param Date $1 -- backup_start date located in terminator.conf
-# param Dir $2 -- destination directory
-# param File $3 -- backup file to copy
-yearly_backup() {
-	local backup_start_date="$1"
-	local destination_dir="$2"
-	local db_backup_file="$3"
+# param Dir $1 -- destination directory
+# param File $2 -- backup file to copy
+yearly_db_backup() {
+	local destination_dir="$1"
+	local db_backup_file="$2"
 
 	local current_month_day="$(date +"%-m%d")"
 	local backup_start_month_day="$(date -d "$backup_start" +"%-m%d")"
 
-	if (("$current_month_day" > "$backup_start_month_day")) ; then
-		local past_backup_year="$(date +"%Y")"
-	else
-		local past_backup_year="$(date -d "last year" +"%Y")"
-	fi
-
-	local past_backup_date="$(date -d "$past_backup_year-\
-		$(date -d "$backup_start" +"%m-%d")" +"%F")"
-	
 	# Need to backup if last one was missed or if it's the same day of the year
 	#     as program installation (backup_start)
-	if missed_local_backup "$destination_dir" "$past_backup_date" || \
+	if missed_local_backup "$destination_dir" \
+		"$(previous_yearly_backup_date )" || \
 		(("$current_month_day" == "$backup_start_month_day")) ; then
 
 		cp "$db_backup_file" "$destination_dir"
 		echo "DB Backup Info: performed yearly backup" >> "$log_file"
 
-		curate_backups "$destination_dir" "$yearly_backup_rollover"
+		curate_backups "$destination_dir" "$yearly_db_backup_rollover"
 	fi
-
 }
 
 # Backs up database using scheduling functions, does not accept params
@@ -368,23 +410,20 @@ backup_db() {
 	fi
 
 	# File used for backup
-	db_backup_file="$local_host_backup_dir/backups/mysqldump/daily/"
+	db_backup_file="$local_host_backup_dir/mysqldump/daily/"
 	db_backup_file+="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
 
 	# Perform initial daily backup, and, if successful, perform other timed
 	#     backups
-	if daily_backup "$local_host_db_user" "$local_host_db_pass" \
+	if daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
 		"$db_backup_file" ; then
 
 		# Perform timed backups if appropriate
-		weekly_backup "$backup_start" \
-			"$local_host_backup_dir/backups/mysqldump/weekly" \
+		weekly_db_backup "$local_host_backup_dir/mysqldump/weekly" \
 			"$db_backup_file.gz"
-		monthly_backup "$backup_start" \
-			"$local_host_backup_dir/backups/mysqldump/monthly" \
+		monthly_db_backup "$local_host_backup_dir/mysqldump/monthly" \
 			"$db_backup_file.gz"
-		yearly_backup "$backup_start" \
-			"$local_host_backup_dir/backups/mysqldump/yearly" \
+		yearly_db_backup "$local_host_backup_dir/mysqldump/yearly" \
 			"$db_backup_file.gz"
 	
 	else
@@ -408,10 +447,10 @@ backup_db() {
 if db_backup_requested ; then
 	# Database backup directory structure list
 	db_backup_dirs=(
-		"backups/mysqldump/daily"
-		"backups/mysqldump/weekly"
-		"backups/mysqldump/monthly"
-		"backups/mysqldump/yearly"
+		"mysqldump/daily"
+		"mysqldump/weekly"
+		"mysqldump/monthly"
+		"mysqldump/yearly"
 	)
 	create_db_backup_dirs "$local_host_backup_dir" "${db_backup_dirs[@]}"
 
@@ -430,7 +469,7 @@ echo >> "$log_file"
 # Rsync with External Hosts #
 # ------------------------- #
 
-echo "# Remote backups" >> "$log_file"
+echo "# Remote Backups" >> "$log_file"
 
 # Sets the default scheduling for backup to remote hosts if not set by the user 
 #     or value is incorrectly entered
@@ -489,7 +528,8 @@ missed_remote_backup() {
 	local known_backup_date
 
 	known_backup_date=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
-		-i "$ssh_key" -o IdentitiesOnly=yes '
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no '
 		
 		# Check if directory is empty because date will set to current date if 
 		# it receives a null value
@@ -547,10 +587,6 @@ remote_backup_requested() {
 	if ! [[ -n "$domain" ]] || ! [[ -n "$port" ]] || ! [[ -n "$user" ]] || \
 		! [[ -n "$ssh_key" ]] || ! [[ -n "$backup_dir" ]] ; then
 
-		echo -n "Remote backup notice: no $host_type host login parameters.  " \
-			>> "$log_file"
-		echo "Skipping . . . " >> "$log_file"
-
 		return 1
 	fi
 
@@ -565,7 +601,7 @@ ssh_key_ok() {
 
 	# SSH key isn't a real file
 	if ! [[ -f "$ssh_key" ]] ; then
-		echo "Remote backup error: the "$ssh_key" SSH key does not exist" \
+		echo "Remote Backup Error: the "$ssh_key" SSH key does not exist" \
 			>> "$log_file"
 
 		return 1
@@ -573,9 +609,9 @@ ssh_key_ok() {
 	# SSH key is encrypted and can't be used
 	elif grep -q "ENCRYPTED" "$ssh_key" ; then
 		error_flag=1
-		email_body=" - Remote backup\n"
+		email_body+=" - Remote backup\n"
 
-		echo -n "Remote backup error: $ssh_key ssh key encrypted.  " \
+		echo -n "Remote Backup Error: $ssh_key ssh key encrypted.  " \
 			>> "$log_file"
 		echo "Can't login to server." >> "$log_file"
 
@@ -592,7 +628,7 @@ ssh_key_ok() {
 # param Var (as string) $2 -- SSH port of host
 # param Var (as string) $3 -- backup user of host
 # param Var (as string) $4 -- host ssh key (no passphrase allowed)
-host_ok() {
+host_login_ok() {
 	local domain="$1"
 	local port="$2"
 	local user="$3"
@@ -600,12 +636,13 @@ host_ok() {
 
 	# Remote host unable to be logged into
 	if ! ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" -o \
-		IdentitiesOnly=yes exit ; then
+		IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no exit ; then
 
 		error_flag=1
-		email_body=" - Remote backup\n"
+		email_body+=" - Remote backup\n"
 
-		echo -n "Remote backup error: host $domain unable to be " \
+		echo -n "Remote Backup Error: host $domain unable to be " \
 			>> "$log_file"
 		echo "reached; check host login parameters and remote server" \
 			>> "$log_file"
@@ -618,14 +655,12 @@ host_ok() {
 	return 0
 }
 
-
 # Checks existence of credentials for a backup host
-# param String $1 -- "on-site" or "off-site"
-# param Var (as string) $1 -- domain name of host
-# param Var (as string) $2 -- SSH port of host
-# param Var (as string) $3 -- backup user of host
-# param Var (as string) $4 -- host ssh key (no passphrase allowed)
-# param Var (as string) $5 -- backup directory on remote host
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
 backup_dir_ok() {
 	local domain="$1"
 	local port="$2"
@@ -637,14 +672,14 @@ backup_dir_ok() {
 	local file_permissions
 
 	file_owner=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
-		-i "$ssh_key" -o IdentitiesOnly=yes '
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no '
 		
 		file_owner="$(ls -alF '$backup_dir' | awk "FNR == 2 {print \$3}")"
 		echo "$file_owner"
 	')
 
 	file_permissions=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
-		-i "$ssh_key" -o IdentitiesOnly=yes '
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no '
 
 		file_permissions="$(ls -alF '$backup_dir' | awk "FNR == 2 {print \$1}")"
 		echo "$file_permissions"
@@ -652,9 +687,9 @@ backup_dir_ok() {
 
 	if ! [[ "$file_owner" == "$user" ]] ; then
 		error_flag=1
-		email_body=" - Remote backup\n"
+		email_body+=" - Remote backup\n"
 
-		echo -n "Remote backup error: $backup_dir on host $domain not owned " \
+		echo -n "Remote Backup Error: $backup_dir on host $domain not owned " \
 			>> "$log_file"
 		echo "by user listed in terminator.conf: $user" \
 			>> "$log_file"
@@ -662,11 +697,11 @@ backup_dir_ok() {
 		return 1
 	fi
 
-	if ! [[ "$file_permissions" = "drwx*" ]] ; then
+	if ! [[ "$file_permissions" == drwx* ]] ; then
 		error_flag=1
-		email_body=" - Remote backup\n"
+		email_body+=" - Remote backup\n"
 
-		echo -n "Remote backup error: $backup_dir on host $domain does not " \
+		echo -n "Remote Backup Error: $backup_dir on host $domain does not " \
 			>> "$log_file"
 		echo "have at least 700 permissions or is not a directory" \
 			>> "$log_file"
@@ -677,23 +712,215 @@ backup_dir_ok() {
 	return 0
 }
 
-# TODO
+# Rsyncs to remote host daily
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+# param String $6 -- user selected schedule based on terminator.conf
+daily_rsync() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	rsync -az --delete -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+
+		echo -n "Remote Backup Info: performing daily remote backup to " \
+			>> "$log_file"
+		echo "host $domain" >> "$log_file"
+}
+
+# Rsyncs to remote host daily
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+# param String $6 -- user selected schedule based on terminator.conf
+weekly_rsync() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	local current_weekday="$(date +"%A")"
+	local backup_start_weekday="$(date -d "$backup_start" +"%A")"
+
+
+	if missed_remote_backup "$domain" "$port" "$user" "$ssh_key" "$backup_dir" \
+		"$(previous_weekly_backup_date)" \
+		|| [[ "$current_weekday" == "$backup_start_weekday" ]] ; then
+
+		rsync -az --delete -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+
+		echo -n "Remote Backup Info: performing weekly remote backup to " \
+			>> "$log_file"
+		echo "host $domain" >> "$log_file"
+	fi
+}
+
+# Rsyncs to remote host daily
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+# param String $6 -- user selected schedule based on terminator.conf
+monthly_rsync() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	local current_day_of_month="$(date +"%d")"
+	local current_month="$(date +"%m")"
+
+	# http://stackoverflow.com/questions/12381501/how-to-use-bash-to-get-the-last-day-of-each-month-for-the-current-year-without-u
+	local current_month_total_days="$(date -d "$current_month/1 \
+		+ 1 month - 1 day" +"%-d")"
+
+	local backup_start_day_of_month="$(date -d "$backup_start" +"%-d")"
+
+	# If backup_start_day_of_month is greater than the total days in the CURRENT
+	#     month, then the scheduled backup day will be the last day of the 
+	#     current month
+	if (("$backup_start_day_of_month" > "$current_month_total_days")) ; then
+		local scheduled_backup_day="$current_month_total_days"
+	else
+		local scheduled_backup_day="$backup_start_day_of_month"
+	fi
+
+	# Need to backup if last one was missed or if it's the same day of the month
+	#     (or last day of the month, whichever comes first) as program 
+	#     installation (backup_start)
+	if missed_remote_backup "$domain" "$port" "$user" "$ssh_key" "$backup_dir" \
+		"$(previous_monthly_backup_date)" || \
+		[[ "$current_day_of_month" == "$scheduled_backup_day" ]] ; then
+
+		rsync -az --delete -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+
+		echo -n "Remote Backup Info: performing monthly remote backup to " \
+			>> "$log_file"
+		echo "host $domain" >> "$log_file"
+	fi
+}
+
+# Rsyncs to remote host daily
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+# param String $6 -- user selected schedule based on terminator.conf
+yearly_rsync() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	local current_month_day="$(date +"%-m%d")"
+	local backup_start_month_day="$(date -d "$backup_start" +"%-m%d")"
+
+	# Need to backup if last one was missed or if it's the same day of the year
+	#     as program installation (backup_start)
+	if missed_remote_backup "$domain" "$port" "$user" "$ssh_key" "$backup_dir" \
+		"$(previous_yearly_backup_date )" || \
+		(("$current_month_day" == "$backup_start_month_day")) ; then
+
+		rsync -az --delete -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+
+		echo -n "Remote Backup Info: performing yearly remote backup to " \
+			>> "$log_file"
+		echo "host $domain" >> "$log_file"
+	fi
+}
+
+# Backups to remote hosts at user selected frequency (terminator.conf)
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+# param String $6 -- user selected schedule based on terminator.conf
 rsync_host() {
-	# Everything is good, backup to remote
-	rsync -az --delete -e "ssh -F /dev/null -p "$port" \
-		-i "$ssh_key"" $local_host_backup_dir/ \
-		"$user"@"$domain":"$backup_dir" \
-		2>> "$log_file"
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+	local backup_schedule="$6"
 
-	echo "backing up to $host_type host"
+	# If everything is ready for login
+	if ssh_key_ok "$ssh_key" && host_login_ok "$domain" "$port" "$user" \
+		"$ssh_key" && backup_dir_ok "$domain" "$port" "$user" "$ssh_key" \
+		"$backup_dir" ; then
 
+		if [[ "$backup_schedule" == "daily" ]] ; then
+			daily_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
 
-	return 0
+		elif [[ "$backup_schedule" == "weekly" ]] ; then
+			weekly_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+
+		elif [[ "$backup_schedule" == "monthly" ]] ; then
+			monthly_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+
+		elif [[ "$backup_schedule" == "yearly" ]] ; then
+			yearly_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+
+		fi
+
+		# Rsync failed
+		if grep -q "rsync: \|rsync error: " "$log_file" ; then
+			email_flag=1
+			email_body+=" - Remote backup\n"
+			
+			return 1
+		fi
+
+		# Successful rsync with no errors
+		return 0
+
+	fi
+
+	# connection failed
+	return 1
 }
 
 # On site host backup
+if remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
+	"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir"
+then
+	rsync_host "$on_site_host_domain" "$on_site_host_port" \
+		"$on_site_host_user" "$on_site_host_ssh_key" \
+		"$on_site_host_backup_dir" "$on_site_backup_freq"
+
+else
+	echo -n "Remote Backup Notice: no on-site host login parameters.  " \
+		>> "$log_file"
+	echo "Skipping . . . " >> "$log_file"
+
+fi
 
 # Off site host backup
+if remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
+	"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir"
+then
+	rsync_host "$off_site_host_domain" "$off_site_host_port" \
+		"$off_site_host_user" "$off_site_host_ssh_key" \
+		"$off_site_host_backup_dir" "$off_site_backup_freq"
+
+else
+	echo -n "Remote Backup Notice: no off-site host login parameters.  " \
+		>> "$log_file"
+	echo "Skipping . . . " >> "$log_file"
+
+fi
 
 
 # ------------------ #
@@ -701,9 +928,9 @@ rsync_host() {
 # ------------------ #
 
 # If errors and admin emails set, send email of error status
-# if [[ -n "$mailto" ]] && [[ "$error_flag" == 1 ]] ; then
-# 	echo -e "$email_body" |
-# 	mutt -e "set from=terminator@$HOSTNAME.server realname='$HOSTNAME'" \
-# 		-s "$HOSTNAME System Maintenance Errors" \
-# 		-a "$log_file" -- "$mailto"
-# fi
+if [[ -n "$mailto" ]] && [[ "$error_flag" == 1 ]] ; then
+	echo -e "$email_body" |
+	mutt -e "set from=terminator@$HOSTNAME.server realname='$HOSTNAME'" \
+		-s "$HOSTNAME System Maintenance Errors" \
+		-a "$log_file" -- "$mailto"
+fi
