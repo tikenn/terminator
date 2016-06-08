@@ -39,6 +39,18 @@ if ! which mutt > /dev/null ; then
 	sudo aptitude install -y mutt
 fi
 
+# ---------------------- #
+# Backup Utility Install #
+# ---------------------- #
+
+# Check system for dump
+# Install if not already installed
+if ! which dump > /dev/null ; then
+	sudo aptitude update
+	sudo aptitude install -y dump
+fi
+
+
 # ---------------- #
 # SSH key creation #
 # ---------------- #
