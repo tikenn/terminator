@@ -41,16 +41,18 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
  - The setup file (```./setup```) will create SSH Keys for remote hosts and set up ```terminator.conf``` with their location upon request (however, these can be set up manually configured if desired)
  - ```terminator``` requires **unencrypted** SSH Keys to login to remote hosts
  - Once created, ```./setup``` will automatically store the private key(s)' location
- - Place the public key ```*.pub``` on the remote host in $HOME/.ssh/ and rename it to ```authorized_hosts```
+ - Place the public key (```*.pub```) on the remote host in ```$HOME/.ssh/``` and do one of following:
+    - ```authorized_keys``` does not exist:  rename public key to ```authorized_keys``` (```mv *.pub authorized_keys```)
+    - ```authorized_keys``` exists:  append public key to ```authorized_keys``` (```cat *.pub >> authorized_keys```)
 
 ## Remote Host Setup
  - ```terminator.conf``` allows for two remote hosts based on the principle of having an on-site and off-site backup
  - In order to login to a remote host, ```terminator``` will require the following information per host in ```terminator.conf```
-     - IP Address or Domain name (on_site_host_domain= and off_site_host_domain=)
-     - Port Number (on_site_host_port= and off_site_host_port=)
-     - Host user (on_site_host_user= and off_site_host_user=)
-     - SSH Key (on_site_host_ssh_key= and off_site_host_ssh_key=) - automatically fille out if requested in ```./setup```
-     - Directory for storing backups on remote host (on_site_host_backup_dir= and off_site_host_backup_dir=)
+     - IP Address or Domain name (```on_site_host_domain=``` and ```off_site_host_domain=```)
+     - Port Number (```on_site_host_port=``` and ```off_site_host_port=```)
+     - Host user (```on_site_host_user=``` and ```off_site_host_user=```)
+     - SSH Key (```on_site_host_ssh_key=``` and ```off_site_host_ssh_key=```) - automatically filled out if requested in ```./setup```
+     - Directory for storing backups on remote host (```on_site_host_backup_dir=``` and ```off_site_host_backup_dir=```)
  - After filling out the appropriate sections of ```terminator.conf```, ```terminator``` will use ***rsync*** to manage remote backups 
 
 ## Dependencies
