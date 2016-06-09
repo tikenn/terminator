@@ -739,88 +739,45 @@ perform_system_backup() {
 	return 0
 }
 
-# Performs weekly level0 backup
+# Schedules system backup level based on calculate $(backup_level) and whether
+#     a backup was missed or not
 # param Int $1 -- number indicating level of backup
 # param Dir $2 -- backup directory
 # param File $3 -- name of file that is supposed to contain level 0 backup
-weekly_system_backup() {
+schedule_system_backup() {
 	local backup_level="$1"
 	local backup_dir="$2"
 	local level0_backup="$3"
 
+	local previous_level0_backup_date
+
+	if [[ "$system_backup_freq" == "weekly" ]] ; then 
+		previous_level0_backup_date="$(previous_weekly_backup_date)"
+
+	# Monthly level 0 system dumps
+	elif [[ "$system_backup_freq" == "monthly" ]] ; then
+		previous_level0_backup_date="$(previous_monthly_backup_date)"
+
+	# Yearly level 0 system dumps
+	elif [[ "$system_backup_freq" == "yearly" ]] ; then
+		previous_level0_backup_date="$(previous_yearly_backup_date)"
+	fi
+
 	# If last level 0 backup was missed, perform a level 0, no questions
 	if missed_level0_backup "$backup_dir" "$level0_backup" \
-		"$(previous_weekly_backup_date)" ; then
+		"$previous_level0_backup_date" ; then
 
 		perform_system_backup "0"
 
 	# Otherwise, just perform backup at normal schedule
 	else
 		perform_system_backup "$backup_level"
-
 	fi
+
 }
 
-# Performs monthly level0 backup
-# param Int $1 -- number indicating level of backup
-# param Dir $2 -- backup directory
-# param File $3 -- name of file that is supposed to contain level 0 backup
-monthly_system_backup() {
-	local backup_level="$1"
-	local backup_dir="$2"
-	local level0_backup="$3"
-
-	# If last level 0 backup was missed, perform a level 0, no questions
-	if missed_level0_backup "$backup_dir" "$level0_backup" \
-		"$(previous_monthly_backup_date)" ; then
-
-		perform_system_backup "0"
-
-	# Otherwise, just perform backup at normal schedule
-	else
-		perform_system_backup "$backup_level"
-
-	fi
-}
-
-# Performs yearly level0 backup
-# param Int $1 -- number indicating level of backup
-# param Dir $2 -- backup directory
-# param File $3 -- name of file that is supposed to contain level 0 backup
-yearly_system_backup() {
-	local backup_level="$1"
-	local backup_dir="$2"
-	local level0_backup="$3"
-
-	# If last level 0 backup was missed, perform a level 0, no questions
-	if missed_level0_backup "$backup_dir" "$level0_backup" \
-		"$(previous_yearly_backup_date)" ; then
-
-		perform_system_backup "0"
-
-	# Otherwise, just perform backup at normal schedule
-	else
-		perform_system_backup "$backup_level"
-
-	fi
-}
-
-# Weekly level 0 backups
-if [[ "$system_backup_freq" == "weekly" ]] ; then 
-	weekly_system_backup "$(backup_level)" "$local_host_backup_dir" \
-		"$HOSTNAME.systemdump.level_0.dump.gz"
-
-# Monthly level 0 system dumps
-elif [[ "$system_backup_freq" == "monthly" ]] ; then
-	monthly_system_backup "$(backup_level)" "$local_host_backup_dir" \
-		"$HOSTNAME.systemdump.level_0.dump.gz"
-
-# Yearly level 0 system dumps
-elif [[ "$system_backup_freq" == "yearly" ]] ; then
-	yearly_system_backup "$(backup_level)" "$local_host_backup_dir" \
-		"$HOSTNAME.systemdump.level_0.dump.gz"
-
-fi
+schedule_system_backup "$(backup_level)" "$local_host_backup_dir" \
+	"$HOSTNAME.systemdump.level_0.dump.gz"
 
 echo >> "$log_file"
 
