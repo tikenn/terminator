@@ -27,9 +27,9 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 # How it works
 ## Configuration File
  - The configuration file ```terminator.conf``` is automatically set up when running ```./setup```
- - Answers to ```./setup``` questions are automatically stored there
- - Other values are set to default in ```terminator``` script
+ - Answers to ```./setup``` questions are automatically stored in ```terminator.conf```
  - Database and remote backup host parameters need to be set in order to take advantage of them
+ - Other values are set to default in ```terminator``` script
 
 ## Backup Schedule
  - Setup file (```./setup```) requests schedule time for daily run and automatically sets up cron job
