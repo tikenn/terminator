@@ -29,7 +29,7 @@ fi
 . "$install_location/terminator.conf"
 
 # Create log directory if not exists
-if ! [[ -d log ]] ; then
+if ! [[ -d "$install_location/log" ]] ; then
 	mkdir "$install_location/log"
 fi
 
@@ -121,8 +121,8 @@ previous_weekly_backup_date() {
 #     based on the terminator install date
 # return Date
 previous_monthly_backup_date() {
-	local current_day_of_month="$(date +"%d")"
-	local current_month="$(date +"%m")"
+	local current_day_of_month="$(date +"%-d")"
+	local current_month="$(date +"%-m")"
 
 	# http://stackoverflow.com/questions/12381501/how-to-use-bash-to-get-the-last-day-of-each-month-for-the-current-year-without-u
 	local current_month_total_days="$(date -d "$current_month/1 \
@@ -573,69 +573,73 @@ date_diff() {
 	echo $(( ${diff#-}/(3600*24) ))
 }
 
+# Cycles through backup levels 1 - 6 when provided with a date difference 
+#     greater than 1
+# param Int $1 -- difference between current date and previous checkpoint
+# return Int
+weekly_backup_cycle_level() {
+	local date_difference="$1"
+	local backup_level
+
+	# prevents level 0 by simply setting to 6
+	if (($date_difference % 6 == 0)) ; then
+		backup_level=6
+
+	# Cycle of 6 (total of 7 with level 0)
+	else
+		backup_level=$(($date_difference % 6))
+
+	fi
+
+	echo "$backup_level"
+}
+
 # Calculates the level of the backup that should be performed
-# Levels are on a daily schedule of 0, 1, 2, 3, 4, 5, 6, 6... (until next level
-#     0 backup when everything starts over)
+# Levels are on a daily schedule of 0, 1, 2, 3, 4, 5, 6, 1, 2, 3... (until next 
+#     level 0 backup when everything starts over)
 # return Int
 backup_level() {
 	local backup_level
 	local current_date="$(date)"
+	local date_difference
 
 	# Weekly level 0 system dumps
 	if [[ "$system_backup_freq" == "weekly" ]] ; then 
+		date_difference="$(date_diff "$current_date" \
+			"$(previous_weekly_backup_date)")"
+
 		if weekly_backup_date_reached ; then
 			backup_level=0
 
-		# While still in the first week past last backup, use number of 
-		#     days past last backup as level: 1, 2, 3, 4, 5, 6
-		elif ((date_diff "$current_date" "$(previous_weekly_backup_date)" \
-			< 7)) ; then
-
-			backup_level="$(date_diff "$current_date" \
-				"$(previous_weekly_backup_date)")"
-
-		# Continue using level 6 backups till next level 0
+		# Cycle through backup levels till next level 0
 		else
-			backup_level=6
-
+			backup_level="$(weekly_backup_cycle_level "$date_difference")"
 		fi
 
 	# Monthly level 0 system dumps
 	elif [[ "$system_backup_freq" == "monthly" ]] ; then
+		date_difference="$(date_diff "$current_date" \
+			"$(previous_monthly_backup_date)")"
+
 		if monthly_backup_date_reached ; then
 			backup_level=0
 
-		# While still in the first week past last backup, use number of 
-		#     days past last backup as level: 1, 2, 3, 4, 5, 6
-		elif ((date_diff "$current_date" "$(previous_monthly_backup_date)" \
-			< 7)) ; then
-
-			backup_level="$(date_diff "$current_date" \
-				"$(previous_monthly_backup_date)")"
-
-		# Continue using level 6 backups till next level 0
+		# Cycle through backup levels till next level 0
 		else
-			backup_level=6
-
+			backup_level="$(weekly_backup_cycle_level "$date_difference")"
 		fi
 
 	# Yearly level 0 system dumps
 	elif [[ "$system_backup_freq" == "yearly" ]] ; then
-		if yearly_backup_date_reached; then
+		date_difference="$(date_diff "$current_date" \
+			"$(previous_yearly_backup_date)")"
+
+		if yearly_backup_date_reached ; then
 			backup_level=0
 
-		# While still in the first week past last backup, use number of 
-		#     days past last backup as level: 1, 2, 3, 4, 5, 6
-		elif ((date_diff "$current_date" "$(previous_yearly_backup_date)" \
-			< 7)) ; then
-
-			backup_level="$(date_diff "$current_date" \
-				"$(previous_yearly_backup_date)")"
-
-		# Continue using level 6 backups till next level 0
+		# Cycle through backup levels till next level 0
 		else
-			backup_level=6
-
+			backup_level="$(weekly_backup_cycle_level "$date_difference")"
 		fi
 	fi
 
@@ -644,140 +648,171 @@ backup_level() {
 
 # Resets dumps by removing all files in current dump directory so that a new
 #     level 0 dump can be placed inside
+# Expects files to be named xxxxxxlevel_#.tar.gz or xxxxlevel_#.snar
 # param Dir $1 -- directory where system dumps are stored
+# param Int $2 -- level to reset dumps to (if null, removes everything)
 reset_dumps() {
 	local dump_dir="$1"
+	local backup_level="$2"
+	local file_level
 
-	rm -rf "$dump_dir/*"
+	if [[ -z "$backup_level" ]] ; then
+		echo "inside loop"
+		rm -rf "$dump_dir"/*
+
+	else
+		# look through all files
+		for file in $(ls "$dump_dir") ; do
+			file_level=${file#*level_}
+			file_level=${file_level%.tar.gz}
+			file_level=${file_level%.snar}
+
+			# remove any file with a backup level higher than backup_level
+			if (($file_level > $backup_level)) ; then
+				rm -rf "$dump_dir/$file"
+			fi
+		done
+	fi
 }
 
-# Determines if a level 0 backup has been missed
-# param Dir $1 -- backup directory
-# param File $2 -- name of file that is supposed to contain level 0 backup
-# param Date $3 -- date that level 0 backup was supposed to take place
-missed_level0_backup() {
-	# Backup directory
-	local backup_dir="$1"
+reset_dumps "$local_host_backup_dir/systemdumps" 0
 
-	# File containing level 0 backup
-	local level0_backup="$2"
+# # Resets dumps by removing all files in current dump directory so that a new
+# #     level 0 dump can be placed inside
+# # param Dir $1 -- directory where system dumps are stored
+# reset_dumps() {
+# 	local dump_dir="$1"
 
-	# most recent backup date that should have occurred
-	local required_backup_date=$(date -d "$3" +"%Y%m%d")
+# 	rm -rf "$dump_dir/*"
+# }
 
-	# Check if a level 0 backup exists in the first place
-	if [[ "$(ls -A "$backup_dir/$level0_backup")" ]] ; then
-		# backup exists, get date (only need first row of ls due to ls on file)
-		local known_backup_date="$(date -d "$(ls -lFt --full-time \
-			"$backup_dir/$level0_backup" \
-			| awk 'FNR == 1 {print $6}')" +"%Y%m%d")"
+# # Determines if a level 0 backup has been missed
+# # param Dir $1 -- backup directory
+# # param File $2 -- name of file that is supposed to contain level 0 backup
+# # param Date $3 -- date that level 0 backup was supposed to take place
+# missed_level0_backup() {
+# 	# Backup directory
+# 	local backup_dir="$1"
+
+# 	# File containing level 0 backup
+# 	local level0_backup="$2"
+
+# 	# most recent backup date that should have occurred
+# 	local required_backup_date=$(date -d "$3" +"%Y%m%d")
+
+# 	# Check if a level 0 backup exists in the first place
+# 	if [[ "$(ls -A "$backup_dir/$level0_backup")" ]] ; then
+# 		# backup exists, get date (only need first row of ls due to ls on file)
+# 		local known_backup_date="$(date -d "$(ls -lFt --full-time \
+# 			"$backup_dir/$level0_backup" \
+# 			| awk 'FNR == 1 {print $6}')" +"%Y%m%d")"
 	
-	# No level 0 file exists, assume it was missed
-	else
-		return 0
-	fi
+# 	# No level 0 file exists, assume it was missed
+# 	else
+# 		return 0
+# 	fi
 
-	# If a backup has not occurred at the required time (required time greater
-	#     than last known backup time), then backup was missed
-	if (( "$required_backup_date" > "$known_backup_date" )) ; then
-		return 0
-	fi
+# 	# If a backup has not occurred at the required time (required time greater
+# 	#     than last known backup time), then backup was missed
+# 	if (( "$required_backup_date" > "$known_backup_date" )) ; then
+# 		return 0
+# 	fi
 
-	return 1
-}
+# 	return 1
+# }
 
-# Function that actually performs entire system backup using dump
-# param Int $1 -- number indicating level of backup
-perform_system_backup() {
-	local backup_level="$1"
-	local backup_file="$HOSTNAME.systemdump.level_$backup_level.dump.gz"
+# # Function that actually performs entire system backup using dump
+# # param Int $1 -- number indicating level of backup
+# perform_system_backup() {
+# 	local backup_level="$1"
+# 	local backup_file="$HOSTNAME.systemdump.level_$backup_level.dump"
 
-	# create system backup directory
-	create_backup_dirs "$local_host_backup_dir" "systemdump"
+# 	# create system backup directory
+# 	create_backup_dirs "$local_host_backup_dir" "systemdump"
 
-	# Flush file system buffers (force cached writes onto disk)
-	sync
+# 	# Flush file system buffers (force cached writes onto disk)
+# 	sync
 
-	# Parameter explanation:
-	#     -b64: uses 64 kb blocks which seems to be the most optimal for speed
-	#     -a: backup everything until finished
-	#     -u: write status to /var/lib/dumpdates after success
-	#     -q: abort without warning when failing
-	# TODO: change this to root once tested
-	dump -"$backup_level" -b64 -auq -f - /home/tikenn/Desktop/test | gzip -5 > \
-		"$local_host_backup_dir/$backup_file"
+# 	# Parameter explanation:
+# 	#     -b64: uses 64 kb blocks which seems to be the most optimal for speed
+# 	#     -a: backup everything until finished
+# 	#     -u: write status to /var/lib/dumpdates after success
+# 	#     -q: abort without warning when failing
+# 	# TODO: change this to root once tested
+# 	dump -"$backup_level" -b64 -aq -f "$local_host_backup_dir/$backup_file" /home/tikenn/Desktop/test | gzip -5 > \
+# 		"$local_host_backup_dir/$backup_file"
 
-	# If dump was successful, file should exist
-	if [[ -f "$local_host_backup_dir/$backup_file" ]] ; then
-		# If level 0, we're startin' over
-		if [[ "$backup_level" == "0" ]] ; then
-			reset_dumps "$local_host_backup_dir/systemdump"
-		fi
+# 	# If dump was successful, file should exist
+# 	if [[ -f "$local_host_backup_dir/$backup_file" ]] ; then
+# 		# If level 0, we're startin' over
+# 		if [[ "$backup_level" == "0" ]] ; then
+# 			reset_dumps "$local_host_backup_dir/systemdump"
+# 		fi
 
-		# Move backup file into systemdump folder and overwrite older dumps
-		#     of same level
-		mv "$local_host_backup_dir/$backup_file" \
-			"$local_host_backup_dir/systemdump/$backup_file"
+# 		# Move backup file into systemdump folder and overwrite older dumps
+# 		#     of same level
+# 		mv "$local_host_backup_dir/$backup_file" \
+# 			"$local_host_backup_dir/systemdump/$backup_file"
 
-		# Log info for user
-		echo -n "System Backup Info: performed level " >> "$log_file"
-		echo -n "$backup_level system backup" >> "$log_file"
+# 		# Log info for user
+# 		echo -n "System Backup Info: performed level " >> "$log_file"
+# 		echo "$backup_level system backup" >> "$log_file"
 
-	# File does not exist, log errors and set up email
-	else
-		# email settings
-		error_flag=1
-		email_body+=" - System backup\n"
+# 	# File does not exist, log errors and set up email
+# 	else
+# 		# email settings
+# 		error_flag=1
+# 		email_body+=" - System backup\n"
 
-		# log error
-		echo "System Backup Fatal Error: $backup_level unsuccessful" \
-			>> "$log_file"
+# 		# log error
+# 		echo "System Backup Fatal Error: $backup_level unsuccessful" \
+# 			>> "$log_file"
 
-		return 1
-	fi
+# 		return 1
+# 	fi
 
-	return 0
-}
+# 	return 0
+# }
 
-# Schedules system backup level based on calculate $(backup_level) and whether
-#     a backup was missed or not
-# param Int $1 -- number indicating level of backup
-# param Dir $2 -- backup directory
-# param File $3 -- name of file that is supposed to contain level 0 backup
-schedule_system_backup() {
-	local backup_level="$1"
-	local backup_dir="$2"
-	local level0_backup="$3"
+# # Schedules system backup level based on calculate $(backup_level) and whether
+# #     a backup was missed or not
+# # param Int $1 -- number indicating level of backup
+# # param Dir $2 -- backup directory
+# # param File $3 -- name of file that is supposed to contain level 0 backup
+# schedule_system_backup() {
+# 	local backup_level="$1"
+# 	local backup_dir="$2"
+# 	local level0_backup="$3"
 
-	local previous_level0_backup_date
+# 	local previous_level0_backup_date
 
-	if [[ "$system_backup_freq" == "weekly" ]] ; then 
-		previous_level0_backup_date="$(previous_weekly_backup_date)"
+# 	if [[ "$system_backup_freq" == "weekly" ]] ; then 
+# 		previous_level0_backup_date="$(previous_weekly_backup_date)"
 
-	# Monthly level 0 system dumps
-	elif [[ "$system_backup_freq" == "monthly" ]] ; then
-		previous_level0_backup_date="$(previous_monthly_backup_date)"
+# 	# Monthly level 0 system dumps
+# 	elif [[ "$system_backup_freq" == "monthly" ]] ; then
+# 		previous_level0_backup_date="$(previous_monthly_backup_date)"
 
-	# Yearly level 0 system dumps
-	elif [[ "$system_backup_freq" == "yearly" ]] ; then
-		previous_level0_backup_date="$(previous_yearly_backup_date)"
-	fi
+# 	# Yearly level 0 system dumps
+# 	elif [[ "$system_backup_freq" == "yearly" ]] ; then
+# 		previous_level0_backup_date="$(previous_yearly_backup_date)"
+# 	fi
 
-	# If last level 0 backup was missed, perform a level 0, no questions
-	if missed_level0_backup "$backup_dir" "$level0_backup" \
-		"$previous_level0_backup_date" ; then
+# 	# If last level 0 backup was missed, perform a level 0, no questions
+# 	if missed_level0_backup "$backup_dir" "$level0_backup" \
+# 		"$previous_level0_backup_date" ; then
 
-		perform_system_backup "0"
+# 		perform_system_backup "0"
 
-	# Otherwise, just perform backup at normal schedule
-	else
-		perform_system_backup "$backup_level"
-	fi
+# 	# Otherwise, just perform backup at normal schedule
+# 	else
+# 		perform_system_backup "$backup_level"
+# 	fi
 
-}
+# }
 
-schedule_system_backup "$(backup_level)" "$local_host_backup_dir" \
-	"$HOSTNAME.systemdump.level_0.dump.gz"
+# schedule_system_backup "$(backup_level)" "$local_host_backup_dir" \
+# 	"$HOSTNAME.systemdump.level_0.dump.gz"
 
 echo >> "$log_file"
 
