@@ -65,10 +65,10 @@ fi
 ## Ex: yes_response "" --> returns 1
 ## Ex: yes_response "gobble de guk" --> returns 1
 yes_no_response() {
-	if [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = y ]] || \
-	[[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = yes ]] || \
-	[[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = n ]] || \
-	[[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = no ]] ; then
+	if [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = y ]] \
+		|| [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = yes ]] \
+		|| [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = n ]] \
+		|| [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = no ]] ; then
 
 		return 0
 	else
@@ -82,8 +82,8 @@ yes_no_response() {
 ## Ex: yes_response "no" --> returns 1
 ## Ex: yes_response "gobble de guk" --> returns 1
 yes_response() {
-	if [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = y ]] || \
-	[[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = yes ]] ; then
+	if [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = y ]] \
+		|| [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = yes ]] ; then
 
 		return 0
 	else
