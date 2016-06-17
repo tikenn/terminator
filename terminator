@@ -663,6 +663,8 @@ reset_dumps() {
 	else
 		# look through all files
 		for file in $(ls "$dump_dir") ; do
+			# remove everything from the file names except the number which is 
+			#     the level of the backup
 			file_level=${file#*level_}
 			file_level=${file_level%.tar.gz}
 			file_level=${file_level%.snar}
