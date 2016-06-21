@@ -643,6 +643,7 @@ backup_level() {
 		fi
 	fi
 
+	# Return
 	echo "$backup_level"
 }
 
@@ -657,7 +658,6 @@ reset_dumps() {
 	local file_level
 
 	if [[ -z "$backup_level" ]] ; then
-		echo "inside loop"
 		rm -rf "$dump_dir"/*
 
 	else
@@ -733,20 +733,58 @@ previous_level0_backup_date() {
 	echo "$previous_level0_backup_date"
 }
 
+# Projects the system backup tar file size before actually performing backup
+# param File $1 -- tar file to be used for backup
+# param File $2 -- snar file indicating level of backup
+# return Int -- backup size in bytes
+projected_system_backup_size() {
+	local tar_file="$1"
+	local snar_file="$2"
+
+	# Temporary snar file for checking backup size without using snar file that
+	#     will actually be used for backup
+	local temp_snar="$local_host_backup_dir/temp.snar"
+
+	# Only copy file if exists; otherwise, let tar create it
+	if [[ -f "$local_host_backup_dir/$snar_file" ]] ; then
+		# Create temp snar file for checking backup disk size
+		cp "$local_host_backup_dir/$snar_file" \
+			"$local_host_backup_dir/remaining_disk_space_check.snar"
+	fi
+
+	# Projected backup size of tar backup
+	local backup_size="$(tar cpz \
+		--listed-incremental="$temp_snar" \
+		--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
+		| wc -c)"
+
+	# Delete temporary snar file for checking remaining disk space for backup
+	rm "$temp_snar"
+
+	# Return
+	echo "$backup_size"
+}
+
 # Function that actually performs entire system backup using tar
 perform_system_backup() {
 	local previous_level0_backup_date="$(previous_level0_backup_date)"
 	local backup_level="$(backup_level)"
 	local systemdump_dir
-	local snar_file="$HOSTNAME.systemdump.level_$backup_level.snar"
-	local tar_file="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
+	local remaining_disk_space="$(df "$local_host_backup_dir" \
+		| awk 'FNR == 2 {print $4}')"
+	
+	# Level 0 backup files
+	local snar0_file="$HOSTNAME.systemdump.level_0.snar"
+	local tar0_file="$HOSTNAME.systemdump.level_0.tar.gz"
 
 	# Create system backup directory
 	create_backup_dirs "$local_host_backup_dir" "systemdump"
 	systemdump_dir="$local_host_backup_dir/systemdump"
 
 	# If last level 0 backup was missed, perform a level 0, no questions
-	if missed_level0_backup "$local_host_backup_dir/systemdump" ; then
+	if missed_level0_backup "$systemdump_dir" "$tar0_file" \
+		"$previous_level0_backup_date" ; then
+
 		backup_level=0
 
 		echo -n "System Backup Notice: previous level 0 backup missed.  " \
@@ -754,41 +792,78 @@ perform_system_backup() {
 		echo "Attempting to perform level 0 backup . . ." >> "$log_file"
 	fi
 
-	# Create snar file for backup_level being performed from newest snar file
+	# Backup files based on backup level
+	local snar_file="$HOSTNAME.systemdump.level_$backup_level.snar"
+	local tar_file="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
+
+	# Prevent re-running program on same day after successful backup from
+	#     overwriting successful backup (would mess up level)
+	if [[ -f "$systemdump_dir/$tar_file" ]] \
+		&& [[ "$(date -d "$(ls -lFt --full-time "$systemdump_dir/$tar_file" \
+		| awk 'FNR == 1 {print $6}')" +"%Y%m%d")" == "$(date +"%Y%m%d")" ]]
+		then
+		
+		echo -n "System Backup Notice: level $backup_level already " \
+			>> "$log_file"
+		echo "successfully run today.  Terminating backup . . ." \
+			>> "$log_file"
+
+		return 1
+	fi
+
+	# Create snar file for backup_level being performed from most recent snar
+	#     file
 	# Missed backups (other than level 0, which is accounted for above) are of 
-	#     no consequence as failed backups are deleted
+	#     no consequence becaause failed backups do not create snar files (they
+	#     don't track changes) and backup will catch all changes since most 
+	#     recent snar file
 	if ! [[ "$backup_level" == "0" ]] ; then
 		local newest_snar="$(ls -t "$systemdump_dir/"*.snar \
 			| awk 'FNR == 1 {print $1}')"
 		cp "$newest_snar" "$local_host_backup_dir/$snar_file"
+
 	fi
 
-	# Perform system backup
-	# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
-	tar cvpzf "$local_host_backup_dir/$tar_file" \
-		--exclude="$local_host_backup_dir/$tar_file" --one-file-system /home/tikenn/Desktop/test \
-		2>> "$log_file"
+	# If there is enough disk space
+	if (($remaining_disk_space > $(projected_system_backup_size) )) ; then
+		# Perform system backup
+		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
+		tar cvpzf "$local_host_backup_dir/$tar_file" \
+			--listed-incremental="$local_host_backup_dir/$snar_file" \
+			--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
+			2>> "$log_file"
 
-	# Backup was successful if no error status of previous command
-	if [[ $? == 0]] ; then
-		# Level 0 backups reset everything back to start
-		if [[ "$backup_level" == "0" ]] ; then
-			reset_dumps "$systemdump_dir"
+		# Backup was successful if no error status of previous command
+		if [[ "$?" == 0 ]] ; then
+			# Level 0 backups reset everything back to start
+			if [[ "$backup_level" == "0" ]] ; then
+				reset_dumps "$systemdump_dir"
 
-		# Level 1 backups reset back to after level 0 for cycling
-		elif [[ "$backup_level" == "1" ]] ; then
-			reset_dumps "$systemdump_dir" "0"
+			# Level 1 backups reset back to after level 0 for cycling
+			elif [[ "$backup_level" == "1" ]] ; then
+				reset_dumps "$systemdump_dir" "0"
 
+			fi
+
+			mv "$local_host_backup_dir/$snar_file" "$systemdump_dir"
+			mv "$local_host_backup_dir/$tar_file" "$systemdump_dir"
+		
+			# successful backup
+			return 0
 		fi
 
-		mv "$local_host_backup_dir/$snar_file" "$systemdump_dir"
-		mv "$local_host_backup_dir/$tar_file" "$systemdump_dir"
-	
-	# Error during backup, setup email
+	# there isn't enough disk space
 	else
-		error_flag=1
-		email_body+=" - System backup\n"
+		echo -n "System Backup Error: not enough disk space remaining for " \
+			>> "$log_file"
+		echo "local backup  Terminating backup . . ." \
+			>> "$log_file"
+
 	fi
+
+	# An error has occurred
+	error_flag=1
+	email_body+=" - System backup\n"
 }
 
 perform_system_backup
@@ -1244,7 +1319,6 @@ rsync_host() {
 if remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
 	"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir"
 then
-	echo "Rsync on site host"
 	rsync_host "$on_site_host_domain" "$on_site_host_port" \
 		"$on_site_host_user" "$on_site_host_ssh_key" \
 		"$on_site_host_backup_dir" "$on_site_backup_freq"
@@ -1260,11 +1334,11 @@ fi
 if remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
 	"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir"
 then
-	echo "Rsync off site host"
-	# rsync_host "$off_site_host_domain" "$off_site_host_port" \
-	# 	"$off_site_host_user" "$off_site_host_ssh_key" \
-	# 	"$off_site_host_backup_dir" "$off_site_backup_freq"
+	rsync_host "$off_site_host_domain" "$off_site_host_port" \
+		"$off_site_host_user" "$off_site_host_ssh_key" \
+		"$off_site_host_backup_dir" "$off_site_backup_freq"
 
+# No external hosts
 else
 	echo -n "Remote Backup Notice: no off-site host login parameters.  " \
 		>> "$log_file"
