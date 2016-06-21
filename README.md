@@ -6,6 +6,7 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 - [Quick Start](#quick-start)
 - [How it works](#how-it-works)
     - [Configuration File](#configuration-file)
+    - [Programs Used](#programs-used)
     - [Backup Schedule](#backup-schedule)
     - [Remote Host Setup](#remote-host-setup)
     - [SSH Keys](#ssh-keys)
@@ -33,6 +34,12 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
  - Other values are set to default in `terminator` script
  - Database and remote backup host parameters need to be set in order to take advantage of them
 
+## Programs Used
+- Updates: `aptitude`
+- Database backups:  `mysql`
+- System backups:  `tar`
+- Remote backups:  `rsync`
+
 ## Backup Schedule
  - Setup file (`./setup`) requests schedule time for daily run and automatically sets up cron job
 
@@ -42,11 +49,18 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 ### Database
  - Automagic daily, weekly, monthly, and yearly database backup scheduling based on install date
  - Daily, weekly, monthly, and yearly rollover settings in `terminator.conf` determine how many database backups per each time frame to keep; older backups are deleted
+ - Missed weekly, monthly, and yearly backups will occur at the next scheduled daily backup
 
 ### System
  - System backups are incremental
  - Settings in `terminator.conf` allow for a *weekly*, *monthly*, or *yearly* level 0 backup (full system backup)
  - Incremental backups are made on a rotating weekly basis after a level 0 backup until the next level 0 (levels: 1, 2, 3, 4, 5, 6, 1, 2, 3, ...)
+ - Missed level 0 backups will be attempted on the next scheduled backup
+ - Other levels that are missed will cause data loss and are simply skipped ([restores](#system-restore) still take place in the same order)
+
+### Remote
+- Settings in `terminator.conf` allow for a *weekly*, *monthly*, or *yearly* backups to remote
+- Missed backups will be attempted the next day at the scheduled backup time for the local machine
 
 ## Remote Host Setup
 - `terminator.conf` allows for two remote hosts based on the principle of having an on-site and off-site backup
