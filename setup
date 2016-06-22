@@ -116,7 +116,7 @@ create_key() {
 
 	# Create on-site key if "y" or "yes"
 	if yes_response "$create_key_response" ; then
-		key_name="terminator.$1.key"
+		key_name="$HOSTNAME.terminator.$1.key"
 		key_dir="ssh_keys"
 		echo "$key_dir$key_name"
 
