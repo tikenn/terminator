@@ -670,7 +670,7 @@ reset_dumps() {
 			file_level=${file_level%.snar}
 
 			# remove any file with a backup level higher than backup_level
-			if (($file_level > $backup_level)) ; then
+			if (("$file_level" > "$backup_level")) ; then
 				rm -rf "$dump_dir/$file"
 			fi
 		done
@@ -753,7 +753,7 @@ projected_system_backup_size() {
 	fi
 
 	# Projected backup size of tar backup
-	local backup_size="$(tar cpz \
+	local backup_size="$(tar cvpz \
 		--listed-incremental="$temp_snar" \
 		--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
 		| wc -c)"
@@ -770,9 +770,14 @@ perform_system_backup() {
 	local previous_level0_backup_date="$(previous_level0_backup_date)"
 	local backup_level="$(backup_level)"
 	local systemdump_dir
-	local remaining_disk_space="$(df "$local_host_backup_dir" \
-		| awk 'FNR == 2 {print $4}')"
+
+	# df returns disk space in kilobytes, converting to bytes for comparison
+	local remaining_disk_space=$(($(df "$local_host_backup_dir" \
+		| awk 'FNR == 2 {print $4}') * 1000 ))
 	
+	local projected_system_backup_size="$(projected_system_backup_size)"
+
+
 	# Level 0 backup files
 	local snar0_file="$HOSTNAME.systemdump.level_0.snar"
 	local tar0_file="$HOSTNAME.systemdump.level_0.tar.gz"
@@ -825,7 +830,7 @@ perform_system_backup() {
 	fi
 
 	# If there is enough disk space
-	if (($remaining_disk_space > $(projected_system_backup_size) )) ; then
+	if (("$remaining_disk_space" > "$projected_system_backup_size")) ; then
 		# Perform system backup
 		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 		tar cvpzf "$local_host_backup_dir/$tar_file" \
@@ -856,8 +861,13 @@ perform_system_backup() {
 	else
 		echo -n "System Backup Error: not enough disk space remaining for " \
 			>> "$log_file"
-		echo "local backup  Terminating backup . . ." \
+		echo -n "local backup.  " >> "$log_file"
+
+		echo -n "Remaining: $(("$remaining_disk_space" / 1000000000)); " \
 			>> "$log_file"
+		echo -n "Backup: $(("$projected_system_backup_size" / 1000000000)). " \
+			>> "$log_file"
+		echo "Terminating backup . . ." >> "$log_file"
 
 	fi
 
