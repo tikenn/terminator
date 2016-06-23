@@ -1158,7 +1158,7 @@ daily_rsync() {
 	local ssh_key="$4"
 	local backup_dir="$5"
 
-	rsync -az --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+	rsync -az --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
 
 		echo -n "Remote Backup Info: performing daily remote backup to " \
 			>> "$log_file"
@@ -1187,7 +1187,7 @@ weekly_rsync() {
 		"$(previous_weekly_backup_date)" \
 		|| [[ "$current_weekday" == "$backup_start_weekday" ]] ; then
 
-		rsync -az --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+		rsync -az --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
 
 		echo -n "Remote Backup Info: performing weekly remote backup to " \
 			>> "$log_file"
@@ -1234,7 +1234,7 @@ monthly_rsync() {
 		"$(previous_monthly_backup_date)" || \
 		[[ "$current_day_of_month" == "$scheduled_backup_day" ]] ; then
 
-		rsync -az --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+		rsync -az --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
 
 		echo -n "Remote Backup Info: performing monthly remote backup to " \
 			>> "$log_file"
@@ -1265,7 +1265,7 @@ yearly_rsync() {
 		"$(previous_yearly_backup_date )" || \
 		(("$current_month_day" == "$backup_start_month_day")) ; then
 
-		rsync -az --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+		rsync -az --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
 
 		echo -n "Remote Backup Info: performing yearly remote backup to " \
 			>> "$log_file"
