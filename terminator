@@ -16,6 +16,15 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Only change if absolutely necessary
 install_location=/home/tikenn/Desktop/terminator
 
+# Create log directory if not exists
+if ! [[ -d "$install_location/log" ]] ; then
+	mkdir "$install_location/log"
+fi
+
+# Set up log file
+log_file="$install_location/log/$HOSTNAME.$(date +"%F_%T").log"
+touch "$log_file"
+
 # Check for terminator.conf file
 if ! [[ -f "$install_location/terminator.conf" ]] ; then
 	echo "# System check" >> "$log_file"
@@ -27,15 +36,6 @@ fi
 
 # Load in user configurations
 . "$install_location/terminator.conf"
-
-# Create log directory if not exists
-if ! [[ -d "$install_location/log" ]] ; then
-	mkdir "$install_location/log"
-fi
-
-# Set up log file
-log_file="$install_location/log/$HOSTNAME.$(date +"%F_%T").log"
-touch "$log_file"
 
 # Setup error traking for emails
 error_flag=0
