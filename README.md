@@ -70,6 +70,7 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
     - Host user (on_site_host_user= and off_site_host_user=)
     - SSH Key (on_site_host_ssh_key= and off_site_host_ssh_key=) - automatically fille out if requested in `./setup`
     - Directory for storing backups on remote host (on_site_host_backup_dir= and off_site_host_backup_dir=)
+        - ***Important: backup directories must already be on the remote system with the proper permissions!***
 - After filling out the appropriate sections of `terminator.conf`, `terminator` will use ***rsync*** to manage remote backups 
 
 ## SSH Keys
