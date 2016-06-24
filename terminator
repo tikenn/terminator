@@ -753,7 +753,7 @@ projected_system_backup_size() {
 	fi
 
 	# Projected backup size of tar backup
-	local backup_size="$(tar cvpz \
+	local backup_size="$(tar cpz \
 		--listed-incremental="$temp_snar" \
 		--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
 		| wc -c)"
@@ -833,7 +833,7 @@ perform_system_backup() {
 	if (("$remaining_disk_space" > "$projected_system_backup_size")) ; then
 		# Perform system backup
 		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
-		tar cvpzf "$local_host_backup_dir/$tar_file" \
+		tar cpzf "$local_host_backup_dir/$tar_file" \
 			--listed-incremental="$local_host_backup_dir/$snar_file" \
 			--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
 			2>> "$log_file"
