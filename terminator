@@ -14,7 +14,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Variable set automagically by setup script
 # Only change if absolutely necessary
-install_location=/home/tikenn/Desktop/terminator
+install_location=
 
 # Create log directory if not exists
 if ! [[ -d "$install_location/log" ]] ; then
