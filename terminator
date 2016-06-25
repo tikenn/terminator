@@ -771,10 +771,12 @@ create_snar_file() {
 # Projects the system backup tar file size before actually performing backup
 # param File $1 -- tar file to be used for backup
 # param File $2 -- snar file indicating level of backup
+# param Dir $3 -- backup directory to exclude
 # return Int -- backup size in bytes
 projected_system_backup_size() {
 	local tar_file="$1"
 	local snar_file="$2"
+	local systemdump_dir="$3"
 
 	# Temporary snar file for checking backup size without using snar file that
 	#     will actually be used for backup
@@ -788,10 +790,13 @@ projected_system_backup_size() {
 	fi
 
 	# Projected backup size of tar backup
+	# Note that all previous backups must be included in the incremental to
+	#     prevent continually adding them to the incremental
 	local backup_size="$(tar cpz \
 		--listed-incremental="$temp_snar" \
-		--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
-		| wc -c)"
+		--exclude="$local_host_backup_dir/$tar_file" \
+		--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
+		--one-file-system / | wc -c)"
 
 	# Delete temporary snar file for checking remaining disk space for backup
 	rm "$temp_snar"
@@ -805,7 +810,6 @@ perform_system_backup() {
 	local previous_level0_backup_date="$(previous_level0_backup_date)"
 	local level0_tar_file="$HOSTNAME.systemdump.level_0.tar.gz"
 	local backup_level="$(backup_level)"
-	local projected_system_backup_size="$(projected_system_backup_size)"
 	local systemdump_dir
 
 	# df returns disk space in kilobytes, converting to bytes for comparison
@@ -845,8 +849,11 @@ perform_system_backup() {
 	# Backup files based on backup level
 	local snar_file="$(create_snar_file "$backup_level" \
 		"$systemdump_dir" "$local_host_backup_dir")"
-
 	local tar_file="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
+	
+	# projected size eliminating previous backup directory
+	local projected_system_backup_size="$(projected_system_backup_size \
+		"$tar_file" "$snar_file" "$systemdump_dir")"
 
 	# If there is enough disk space
 	if (("$remaining_disk_space" > "$projected_system_backup_size")) ; then
@@ -854,7 +861,9 @@ perform_system_backup() {
 		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 		tar cpzf "$local_host_backup_dir/$tar_file" \
 			--listed-incremental="$local_host_backup_dir/$snar_file" \
-			--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
+			--exclude="$local_host_backup_dir/$tar_file" \
+			--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
+			--one-file-system / \
 			2>> "$log_file"
 
 		# Backup was successful if no error status of previous command
