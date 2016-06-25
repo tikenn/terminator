@@ -780,7 +780,7 @@ projected_system_backup_size() {
 
 	# Temporary snar file for checking backup size without using snar file that
 	#     will actually be used for backup
-	local temp_snar="$local_host_backup_dir/temp.snar"
+	local temp_snar="$local_host_backup_dir/remaining_disk_space_check.snar"
 
 	# Only copy file if exists; otherwise, let tar create it
 	if [[ -f "$local_host_backup_dir/$snar_file" ]] ; then
