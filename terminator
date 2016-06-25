@@ -14,7 +14,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Variable set automagically by setup script
 # Only change if absolutely necessary
-install_location=
+install_location=~/Desktop/terminator
 
 # Create log directory if not exists
 if ! [[ -d "$install_location/log" ]] ; then
@@ -733,6 +733,41 @@ previous_level0_backup_date() {
 	echo "$previous_level0_backup_date"
 }
 
+# Creates appropriate snar file based on backup_level and previous one present
+# param Int $1 -- current backup level
+# param Dir $2 -- directory of previous snar files from past backups
+# param Dir $3 -- temporary directory to store snar till backup finalized
+# return String -- name of snar file created
+create_snar_file() {
+	local backup_level="$1"
+	local systemdump_dir="$2"
+	local local_host_backup_dir="$3"
+
+	local snar_file="$HOSTNAME.systemdump.level_$backup_level.snar"
+	local level0_snar_file="$HOSTNAME.systemdump.level_0.snar"
+	local newest_snar="$(ls -t "$systemdump_dir/"*.snar \
+			| awk 'FNR == 1 {print $1}')"
+
+	# Create snar file for backup_level being performed from most recent snar
+	#     file
+	# All level 1 backups should restart back from level 0 backup
+	if [[ "$backup_level" == "1" ]] ; then
+		cp "$systemdump_dir/$level0_snar_file" \
+			"$local_host_backup_dir/$snar_file"
+
+	# Missed backups (other than level 0, which is accounted for above) are of 
+	#     no consequence becaause failed backups do not create snar files (they
+	#     don't track changes) and backup will catch all changes since most 
+	#     recent snar file
+	elif ! [[ "$backup_level" == "0" ]] ; then
+		cp "$newest_snar" "$local_host_backup_dir/$snar_file"
+
+	fi
+
+	# return
+	echo "$snar_file"
+}
+
 # Projects the system backup tar file size before actually performing backup
 # param File $1 -- tar file to be used for backup
 # param File $2 -- snar file indicating level of backup
@@ -755,7 +790,7 @@ projected_system_backup_size() {
 	# Projected backup size of tar backup
 	local backup_size="$(tar cpz \
 		--listed-incremental="$temp_snar" \
-		--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
+		--exclude="$local_host_backup_dir/$tar_file" --one-file-system /home/tikenn/Desktop/test \
 		| wc -c)"
 
 	# Delete temporary snar file for checking remaining disk space for backup
@@ -768,20 +803,15 @@ projected_system_backup_size() {
 # Function that actually performs entire system backup using tar
 perform_system_backup() {
 	local previous_level0_backup_date="$(previous_level0_backup_date)"
+	local level0_tar_file="$HOSTNAME.systemdump.level_0.tar.gz"
 	local backup_level="$(backup_level)"
+	local projected_system_backup_size="$(projected_system_backup_size)"
 	local systemdump_dir
 
 	# df returns disk space in kilobytes, converting to bytes for comparison
 	local remaining_disk_space=$(($(df "$local_host_backup_dir" \
 		| awk 'FNR == 2 {print $4}') * 1000 ))
 	
-	local projected_system_backup_size="$(projected_system_backup_size)"
-
-
-	# Level 0 backup files
-	local snar0_file="$HOSTNAME.systemdump.level_0.snar"
-	local tar0_file="$HOSTNAME.systemdump.level_0.tar.gz"
-
 	# Create system backup directory
 	create_backup_dirs "$local_host_backup_dir" "systemdump"
 	systemdump_dir="$local_host_backup_dir/systemdump"
@@ -796,10 +826,6 @@ perform_system_backup() {
 			>> "$log_file"
 		echo "Attempting to perform level 0 backup . . ." >> "$log_file"
 	fi
-
-	# Backup files based on backup level
-	local snar_file="$HOSTNAME.systemdump.level_$backup_level.snar"
-	local tar_file="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
 
 	# Prevent re-running program on same day after successful backup from
 	#     overwriting successful backup (would mess up level)
@@ -816,18 +842,11 @@ perform_system_backup() {
 		return 1
 	fi
 
-	# Create snar file for backup_level being performed from most recent snar
-	#     file
-	# Missed backups (other than level 0, which is accounted for above) are of 
-	#     no consequence becaause failed backups do not create snar files (they
-	#     don't track changes) and backup will catch all changes since most 
-	#     recent snar file
-	if ! [[ "$backup_level" == "0" ]] ; then
-		local newest_snar="$(ls -t "$systemdump_dir/"*.snar \
-			| awk 'FNR == 1 {print $1}')"
-		cp "$newest_snar" "$local_host_backup_dir/$snar_file"
+	# Backup files based on backup level
+	local snar_file="$(create_snar_file "$backup_level" \
+		"$systemdump_dir" "$local_host_backup_dir")"
 
-	fi
+	local tar_file="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
 
 	# If there is enough disk space
 	if (("$remaining_disk_space" > "$projected_system_backup_size")) ; then
@@ -835,7 +854,7 @@ perform_system_backup() {
 		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 		tar cpzf "$local_host_backup_dir/$tar_file" \
 			--listed-incremental="$local_host_backup_dir/$snar_file" \
-			--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
+			--exclude="$local_host_backup_dir/$tar_file" --one-file-system /home/tikenn/Desktop/test \
 			2>> "$log_file"
 
 		# Backup was successful if no error status of previous command
@@ -863,9 +882,9 @@ perform_system_backup() {
 			>> "$log_file"
 		echo -n "local backup.  " >> "$log_file"
 
-		echo -n "Remaining: $(("$remaining_disk_space" / 1000000000)); " \
+		echo -n "Remaining: $(("$remaining_disk_space" / 1000000000)) GB; " \
 			>> "$log_file"
-		echo -n "Backup: $(("$projected_system_backup_size" / 1000000000)). " \
+		echo -n "Backup: $(("$projected_system_backup_size" / 1000000000)) GB. " \
 			>> "$log_file"
 		echo "Terminating backup . . ." >> "$log_file"
 
@@ -950,7 +969,7 @@ create_placeholder() {
 		fi
 
 		# Change the date to current date for future reference
-		touch -d "$(date)" placeholder
+		touch -d "$(date)" '"$backup_dir/"'placeholder
 	'
 }
 
