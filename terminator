@@ -790,7 +790,7 @@ projected_system_backup_size() {
 	# Projected backup size of tar backup
 	local backup_size="$(tar cpz \
 		--listed-incremental="$temp_snar" \
-		--exclude="$local_host_backup_dir/$tar_file" --one-file-system /home/tikenn/Desktop/test \
+		--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
 		| wc -c)"
 
 	# Delete temporary snar file for checking remaining disk space for backup
@@ -854,7 +854,7 @@ perform_system_backup() {
 		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 		tar cpzf "$local_host_backup_dir/$tar_file" \
 			--listed-incremental="$local_host_backup_dir/$snar_file" \
-			--exclude="$local_host_backup_dir/$tar_file" --one-file-system /home/tikenn/Desktop/test \
+			--exclude="$local_host_backup_dir/$tar_file" --one-file-system / \
 			2>> "$log_file"
 
 		# Backup was successful if no error status of previous command
