@@ -86,7 +86,7 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
     
     `sudo tar xzpvf backup.tar.gz -C / --numberic-owner`
 
-4. Run the following command if the directories in the command don't exist:
+4. Run the following command if the directories `/proc`, `/sys`, `/mnt`, or `/media` don't exist after running the command in *3*:
 
     `mkdir /proc /sys /mnt /media`
 
