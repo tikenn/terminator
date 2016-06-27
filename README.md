@@ -56,7 +56,7 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
  - Settings in `terminator.conf` allow for a *weekly*, *monthly*, or *yearly* level 0 backup (full system backup)
  - Incremental backups are made on a rotating weekly basis after a level 0 backup until the next level 0 (levels: 1, 2, 3, 4, 5, 6, 1, 2, 3, ...)
  - Missed level 0 backups will be attempted on the next scheduled backup
- - Other levels that are missed will cause data loss and are simply skipped ([restores](#system-restore) still take place in the same order)
+ - Other levels that are missed will not cause data loss and are simply skipped ([restores](#system-restore) still take place in the same order)
 
 ### Remote
 - Settings in `terminator.conf` allow for a *weekly*, *monthly*, or *yearly* backups to remote
