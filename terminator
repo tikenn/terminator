@@ -859,6 +859,7 @@ perform_system_backup() {
 	if (("$remaining_disk_space" > "$projected_system_backup_size")) ; then
 		# Perform system backup
 		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
+
 		tar cpzf "$local_host_backup_dir/$tar_file" \
 			--listed-incremental="$local_host_backup_dir/$snar_file" \
 			--exclude="$local_host_backup_dir/$tar_file" \
@@ -868,6 +869,10 @@ perform_system_backup() {
 
 		# Backup was successful if no error status of previous command
 		if [[ "$?" == 0 ]] ; then
+			# note backup level in log file
+			echo "System Backup Info:  performed level $backup_level backup" \
+				>> "$log_file"
+
 			# Level 0 backups reset everything back to start
 			if [[ "$backup_level" == "0" ]] ; then
 				reset_dumps "$systemdump_dir"
