@@ -831,6 +831,15 @@ perform_system_backup() {
 		echo "Attempting to perform level 0 backup . . ." >> "$log_file"
 	fi
 
+	# Backup files based on backup level
+	local snar_file="$(create_snar_file "$backup_level" \
+		"$systemdump_dir" "$local_host_backup_dir")"
+	local tar_file="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
+	
+	# projected size eliminating previous backup directory
+	local projected_system_backup_size="$(projected_system_backup_size \
+		"$tar_file" "$snar_file" "$systemdump_dir")"
+
 	# Prevent re-running program on same day after successful backup from
 	#     overwriting successful backup (would mess up level)
 	if [[ -f "$systemdump_dir/$tar_file" ]] \
@@ -845,15 +854,6 @@ perform_system_backup() {
 
 		return 1
 	fi
-
-	# Backup files based on backup level
-	local snar_file="$(create_snar_file "$backup_level" \
-		"$systemdump_dir" "$local_host_backup_dir")"
-	local tar_file="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
-	
-	# projected size eliminating previous backup directory
-	local projected_system_backup_size="$(projected_system_backup_size \
-		"$tar_file" "$snar_file" "$systemdump_dir")"
 
 	# If there is enough disk space
 	if (("$remaining_disk_space" > "$projected_system_backup_size")) ; then
