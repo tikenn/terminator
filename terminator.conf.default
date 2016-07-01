@@ -32,7 +32,7 @@ yearly_db_backup_rollover=
 
 # Frequency of level 0 (everything) system backups
 # Can take the values: "daily", "weekly", "monthly", or "yearly"
-# Default value is "monthly"
+# Default value is "weekly"
 system_backup_freq=
 
 # Frequency of backup to on site backup location
