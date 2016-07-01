@@ -10,8 +10,8 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
     - [Backup Schedule](#backup-schedule)
     - [Remote Host Setup](#remote-host-setup)
     - [SSH Keys](#ssh-keys)
-    - [System Restore](#system-restore)
-    - [Dependencies](#dependencies)
+- [System Restore](#system-restore)
+- [Dependencies](#dependencies)
 
 # Features
 - Automatic daily updates
@@ -79,7 +79,7 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 - Once created, `./setup` will automatically store the private key(s)' location
 - Place the public key `*.pub` on the remote host in $HOME/.ssh/ and rename it to `authorized_hosts` ($HOME refers to the home directory of the backup user on the remote host; see [Remote Host Setup](#remote-host-setup))
 
-## System restore
+# System restore
 1. Reinstall the same operating system on the same or new machine
 2. Copy ALL files in $BACKUP_DIR/systemdump to the new machine ($BACKUP_DIR: backup directory set in `terminator.conf`)
 3. For each of the backup levels, run the following command, starting with the lowest level and ending with the highest:
@@ -94,7 +94,7 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 
     `mysql -u root -p --all-databases < backup.sql`
 
-## Dependencies
+# Dependencies
 Terminator primarily uses standard Linux tools; however, email notifications requires installation of email software.  These are installed with `./setup`.  Also, remote backups use *rsync*, but this is assumed to be pre-installed on the system.
  - [mailutils](http://mailutils.org/)
  - [mutt](http://www.mutt.org/)
