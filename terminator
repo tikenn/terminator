@@ -811,14 +811,14 @@ perform_system_backup() {
 	local level0_tar_file="$HOSTNAME.systemdump.level_0.tar.gz"
 	local backup_level="$(backup_level)"
 	local systemdump_dir
-
-	# df returns disk space in kilobytes, converting to bytes for comparison
-	local remaining_disk_space=$(($(df "$local_host_backup_dir" \
-		| awk 'FNR == 2 {print $4}') * 1000 ))
 	
 	# Create system backup directory
 	create_backup_dirs "$local_host_backup_dir" "systemdump"
 	systemdump_dir="$local_host_backup_dir/systemdump"
+
+	# df returns disk space in kilobytes, converting to bytes for comparison
+	local remaining_disk_space=$(($(df "$local_host_backup_dir" \
+		| awk 'FNR == 2 {print $4}') * 1000 ))
 
 	# If last level 0 backup was missed, perform a level 0, no questions
 	if missed_level0_backup "$systemdump_dir" "$tar0_file" \
