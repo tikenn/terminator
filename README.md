@@ -10,7 +10,10 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
     - [Backup Schedule](#backup-schedule)
     - [Remote Host Setup](#remote-host-setup)
     - [SSH Keys](#ssh-keys)
-- [System Restore](#system-restore)
+    - [Backup Process](#backup-process)
+- [Restore](#restore)
+    - [Database Restore](#database-restore)
+    - [System Restore](#system-restore)
 - [Dependencies](#dependencies)
 
 # Features
@@ -37,7 +40,7 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 ## Programs Used
 - Updates: `aptitude`
 - Database backups:  `mysql`
-- System backups:  `tar`
+- System backups:  `tar` and `split`
 - Remote backups:  `rsync`
 
 ## Backup Schedule
@@ -79,12 +82,27 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 - Once created, `./setup` will automatically store the private key(s)' location
 - Place the public key `*.pub` on the remote host in $HOME/.ssh/ and rename it to `authorized_hosts` ($HOME refers to the home directory of the backup user on the remote host; see [Remote Host Setup](#remote-host-setup))
 
-# System restore
+## Backup Process
+
+# Restore
+## Database Restore
+Please note that this is a MySQL-specific protocol
+
+1. Please choose the last snapshot level to restore (previous daily, weekly, monthly, or yearly snapshot)
+2. Go to the chosen directory using the following command:
+
+    `cd $INSTALL_LOCATION/backups/<<snapshot_directory>>`
+
+3. Type in the following command:
+    
+    `mysql -u <<root_user>> -p < database_file_to_restore.sql`
+
+## System Restore
 1. Reinstall the same operating system on the same or new machine
 2. Copy ALL files in $BACKUP_DIR/systemdump to the new machine ($BACKUP_DIR: backup directory set in `terminator.conf`)
 3. For each of the backup levels, run the following command, starting with the lowest level and ending with the highest:
     
-    `sudo tar xzpvf backup.tar.gz -C / --numberic-owner`
+    `sudo cat backup.tar.gz* | tar xzpvf - -C / --numberic-owner`
 
 4. Run the following command if the directories `/proc`, `/sys`, `/mnt`, or `/media` don't exist after running the command in *3*:
 
