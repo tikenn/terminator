@@ -666,7 +666,7 @@ reset_dumps() {
 			# remove everything from the file names except the number which is 
 			#     the level of the backup
 			file_level=${file#*level_}
-			file_level=${file_level%.tar.gz}
+			file_level=${file_level%.tar.gz*}
 			file_level=${file_level%.snar}
 
 			# remove any file with a backup level higher than backup_level
@@ -685,17 +685,17 @@ missed_level0_backup() {
 	# Backup directory
 	local backup_dir="$1"
 
-	# File containing level 0 backup
-	local level0_backup="$2"
+	# File containing level 0 backup (allow blob expansion)
+	local level0_backup="$(ls "$backup_dir/"${2} | awk 'FNR == 1 {print $1}')"
 
 	# most recent backup date that should have occurred
 	local required_backup_date=$(date -d "$3" +"%Y%m%d")
 
-	# Check if a level 0 backup exists in the first place
-	if [[ "$(ls -A "$backup_dir/$level0_backup")" ]] ; then
+	# Check if a level 0 backup exists in the first place (allow blob expansion)
+	if [[ "$(ls -A "$level0_backup")" ]] ; then
 		# backup exists, get date (only need first row of ls due to ls on file)
 		local known_backup_date="$(date -d "$(ls -lFt --full-time \
-			"$backup_dir/$level0_backup" \
+			"$level0_backup" \
 			| awk 'FNR == 1 {print $6}')" +"%Y%m%d")"
 	
 	# No level 0 file exists, assume it was missed
@@ -733,7 +733,8 @@ previous_level0_backup_date() {
 	echo "$previous_level0_backup_date"
 }
 
-# Creates appropriate snar file based on backup_level and previous one present
+# Creates and names appropriate snar file based on backup_level and previous 
+#     one present
 # param Int $1 -- current backup level
 # param Dir $2 -- directory of previous snar files from past backups
 # param Dir $3 -- temporary directory to store snar till backup finalized
@@ -765,10 +766,11 @@ create_snar_file() {
 	fi
 
 	# return
-	echo "$snar_file"
+	echo "$local_host_backup_dir/$snar_file"
 }
 
 # Projects the system backup tar file size before actually performing backup
+# Will only grab the first file in a list of files
 # param File $1 -- tar file to be used for backup
 # param File $2 -- snar file indicating level of backup
 # param Dir $3 -- backup directory to exclude
@@ -805,23 +807,48 @@ projected_system_backup_size() {
 	echo "$backup_size"
 }
 
+# Checks for a backup that has already run today
+# param File $1 -- tar file that would have been created this day 
+#     (expects full path)
+backup_level_rerun() {
+	local tar_file=${1}
+
+	# If blob expansion used, get first file
+	local tar_file_fullname="$(ls ${tar_file} | awk 'FNR == 1 {print $1}')"
+
+	# check if backup level has already been run
+	if [[ -f "$tar_file_fullname" ]] \
+		&& [[ "$(date -d "$(ls -lFt --full-time \
+		"$tar_file_fullname" \
+		| awk 'FNR == 1 {print $6}')" +"%Y%m%d")" == "$(date +"%Y%m%d")" ]]
+		then
+
+		return 0
+	fi
+
+	# backup level not already run
+	return 1
+}
+
 # Function that actually performs entire system backup using tar
 perform_system_backup() {
 	local previous_level0_backup_date="$(previous_level0_backup_date)"
-	local level0_tar_file="$HOSTNAME.systemdump.level_0.tar.gz"
+	local level0_tar_file_prefix="$HOSTNAME.systemdump.level_0.tar.gz"
 	local backup_level="$(backup_level)"
 	local systemdump_dir
+	local remaining_disk_space
 	
 	# Create system backup directory
 	create_backup_dirs "$local_host_backup_dir" "systemdump"
 	systemdump_dir="$local_host_backup_dir/systemdump"
 
 	# df returns disk space in kilobytes, converting to bytes for comparison
-	local remaining_disk_space=$(($(df "$local_host_backup_dir" \
+	remaining_disk_space=$(($(df "$local_host_backup_dir" \
 		| awk 'FNR == 2 {print $4}') * 1000 ))
 
 	# If last level 0 backup was missed, perform a level 0, no questions
-	if missed_level0_backup "$systemdump_dir" "$tar0_file" \
+	# Star is present to catch first tar file due to split
+	if missed_level0_backup "$systemdump_dir" "$level0_tar_file_prefix*" \
 		"$previous_level0_backup_date" ; then
 
 		backup_level=0
@@ -834,19 +861,19 @@ perform_system_backup() {
 	# Backup files based on backup level
 	local snar_file="$(create_snar_file "$backup_level" \
 		"$systemdump_dir" "$local_host_backup_dir")"
-	local tar_file="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
+	local tar_file_prefix="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
 	
-	# projected size eliminating previous backup directory
+	# projected size of whole backup file eliminating previous backup directory
 	local projected_system_backup_size="$(projected_system_backup_size \
-		"$tar_file" "$snar_file" "$systemdump_dir")"
+		"$tar_file_prefix" "$snar_file" "$systemdump_dir")"
 
 	# Prevent re-running program on same day after successful backup from
 	#     overwriting successful backup (would mess up level)
-	if [[ -f "$systemdump_dir/$tar_file" ]] \
-		&& [[ "$(date -d "$(ls -lFt --full-time "$systemdump_dir/$tar_file" \
-		| awk 'FNR == 1 {print $6}')" +"%Y%m%d")" == "$(date +"%Y%m%d")" ]]
-		then
+	if backup_level_rerun "$systemdump_dir/$tar_file_prefix*" ; then
 		
+		# Remove snar file created as it is not necessary
+		rm "$snar_file"
+
 		echo -n "System Backup Notice: level $backup_level already " \
 			>> "$log_file"
 		echo "successfully run today.  Terminating backup . . ." \
@@ -859,16 +886,14 @@ perform_system_backup() {
 	if (("$remaining_disk_space" > "$projected_system_backup_size")) ; then
 		# Perform system backup
 		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
-
-		tar cpzf "$local_host_backup_dir/$tar_file" \
-			--listed-incremental="$local_host_backup_dir/$snar_file" \
+		tar cpz --listed-incremental="$snar_file" \
 			--exclude="$local_host_backup_dir/$tar_file" \
 			--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
-			--one-file-system / \
-			2>> "$log_file"
+			--one-file-system / 2>> "$log_file" \
+			| split -d -b 1000m - "$local_host_backup_dir/$tar_file_prefix"
 
 		# Backup was successful if no error status of previous command
-		if [[ "$?" == 0 ]] ; then
+		if [[ "${PIPESTATUS[0]}" == "0" ]] ; then
 			# note backup level in log file
 			echo "System Backup Info:  performed level $backup_level backup" \
 				>> "$log_file"
@@ -883,11 +908,17 @@ perform_system_backup() {
 
 			fi
 
-			mv "$local_host_backup_dir/$snar_file" "$systemdump_dir"
-			mv "$local_host_backup_dir/$tar_file" "$systemdump_dir"
+			mv "$snar_file" "$systemdump_dir"
+			mv "$local_host_backup_dir/$tar_file_prefix"* "$systemdump_dir"
 		
 			# successful backup
 			return 0
+		
+		# Unsuccessful backup; delete files storing attempted backups
+		else
+			rm "$snar_file"
+			rm "$local_host_backup_dir/$tar_file_prefix"*
+
 		fi
 
 	# there isn't enough disk space
