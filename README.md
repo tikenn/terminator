@@ -83,6 +83,10 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 - Place the public key `*.pub` on the remote host in $HOME/.ssh/ and rename it to `authorized_hosts` ($HOME refers to the home directory of the backup user on the remote host; see [Remote Host Setup](#remote-host-setup))
 
 ## Backup Process
+### Database Backup
+
+### System Backup
+
 
 # Restore
 ## Database Restore
