@@ -368,7 +368,7 @@ curate_backups() {
 		
 		echo "DB Backup Info: removing old file in $backup_dir . . . " \
 			>> "$log_file"
-		# rm -rf "$backup_dir/$oldest_file" 2>> "$log_file"
+		rm -rf "$backup_dir/$oldest_file" 2>> "$log_file"
 		
 		# Reset count
 		file_count="$(ls -1 "$backup_dir" | wc -l)"
