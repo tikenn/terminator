@@ -379,11 +379,13 @@ curate_backups() {
 #     out if no access
 # param String $1 -- root user for db backup
 # param String $2 -- root user password for db backup
+# param Dir $3 -- directory storing daily backups
 # param File $3 -- name of backup file to store backup
 daily_db_backup() {
 	local db_user="$1"
 	local db_pass="$2"
-	local db_backup_file="$3"
+	local destination_dir="$3"
+	local db_backup_file="$4"
 
 	# run backup
 	mysqldump -u "$db_user" -p"$db_pass" --all-databases \
@@ -397,6 +399,8 @@ daily_db_backup() {
 
 	# compress backup
 	gzip "$db_backup_file"
+
+	curate_backups "$destination_dir" "$daily_db_backup_rollover"
 	return 0
 }
 
@@ -476,7 +480,7 @@ backup_db() {
 	# Perform initial daily backup, and, if successful, perform other timed
 	#     backups
 	if daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
-		"$db_backup_file" ; then
+		"$local_host_backup_dir/mysqldump/daily" "$db_backup_file" ; then
 
 		# Perform timed backups if appropriate
 		weekly_db_backup "$local_host_backup_dir/mysqldump/weekly" \
