@@ -69,10 +69,10 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 - `terminator.conf` allows for two remote hosts based on the principle of having an on-site and off-site backup
 - In order to login to a remote host, `terminator` will require the following information per host in `terminator.conf`
     - IP Address or Domain name (on_site_host_domain= and off_site_host_domain=)
-    - Port Number (on_site_host_port= and off_site_host_port=)
-    - Host user (on_site_host_user= and off_site_host_user=)
-    - SSH Key (on_site_host_ssh_key= and off_site_host_ssh_key=) - automatically fille out if requested in `./setup`
-    - Directory for storing backups on remote host (on_site_host_backup_dir= and off_site_host_backup_dir=)
+    - Port Number (`on_site_host_port=` and `off_site_host_port=`)
+    - Host user (`on_site_host_user=` and `off_site_host_user=`)
+    - SSH Key (`on_site_host_ssh_key=` and `off_site_host_ssh_key=`) - automatically fille out if requested in `./setup`
+    - Directory for storing backups on remote host (`on_site_host_backup_dir=` and `off_site_host_backup_dir=`)
         - ***Important: backup directories must already be on the remote system with the proper permissions!***
 - After filling out the appropriate sections of `terminator.conf`, `terminator` will use ***rsync*** to manage remote backups 
 
