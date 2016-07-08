@@ -1,0 +1,29 @@
+#!/bin/bash
+##
+# Terminator: backup and maintenance system for servers
+# Copyright 2016 Tim Kennell Jr.
+# Licensed under the MIT License (http://opensource.org/licenses/MIT)
+##
+
+# Check for terminator.conf file
+if ! [[ -f "terminator.conf" ]] ; then
+	echo "E: could not find 'terminator.conf'.  Please run 'setup'"
+	exit 1
+fi
+
+# Load settings from terminator.conf
+. "terminator.conf"
+
+# Check for email being set
+if [[ -z "$mailto" ]] ; then
+	echo -n "E:  Please provide an email address in terminator.conf by filling "
+	echo "in the the 'mailto' variable"
+	exit 1
+fi
+
+# System checks out; send test email
+echo -e "This is a test email from $HOSTNAME to validate system emails" |
+mutt -e "set from=terminator@$HOSTNAME.server realname=$HOSTNAME" \
+	-s "$HOSTNAME System Test Email" -- "$mailto"
+
+exit 0
