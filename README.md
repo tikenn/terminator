@@ -40,7 +40,7 @@ Installation is made super simple through the use of git/GitHub.  Simply follow 
 
 1. Acquire *terminator* from GitHub using one of the following methods:
     - git clone https://github.com/tikenn/terminator.git
-    - [Latest Release]()
+    - [Latest Release](https://github.com/tikenn/terminator/releases)
 2. Place in a director of your choice on the computer (`/opt` is recommended, but *terminator* will detect any install location through `setup`)
 3. Run `./setup`
 4. Fill out appropriate components of `terminator.conf`.  Details are below and anything not filled out will either not run ([databases](#database-setup) and [remote hosts](#remote-host-setup)) or simply revert to default
