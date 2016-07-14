@@ -799,10 +799,11 @@ projected_system_backup_size() {
 	# Note that all previous backups must be included in the incremental to
 	#     prevent continually adding them to the incremental
 	local backup_size="$(tar cpz \
+		--warning=none \
 		--listed-incremental="$temp_snar" \
 		--exclude="$local_host_backup_dir/$tar_file" \
 		--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
-		--one-file-system / | wc -c)"
+		--one-file-system /home/tikenn/Desktop/test | wc -c)"
 
 	# Delete temporary snar file for checking remaining disk space for backup
 	rm "$temp_snar"
@@ -893,11 +894,11 @@ perform_system_backup() {
 		tar cpz --listed-incremental="$snar_file" \
 			--exclude="$local_host_backup_dir/$tar_file" \
 			--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
-			--one-file-system / 2>> "$log_file" \
+			--one-file-system /home/tikenn/Desktop/test 2>> "$log_file" \
 			| split -d -b 1000m - "$local_host_backup_dir/$tar_file_prefix"
 
 		# Backup was successful if no error status of previous command
-		if [[ "${PIPESTATUS[0]}" == "0" ]] ; then
+		if (( "${PIPESTATUS[0]}" <= 1 )) ; then
 			# note backup level in log file
 			echo "System Backup Info:  performed level $backup_level backup" \
 				>> "$log_file"
