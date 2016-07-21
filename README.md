@@ -145,7 +145,7 @@ Please note that this is a MySQL-specific protocol
 2. Copy ALL files in $BACKUP_DIR/systemdump to the new machine ($BACKUP_DIR: backup directory set in `terminator.conf`)
 3. For each of the backup levels, run the following command, starting with the lowest level and ending with the highest:
     
-    `sudo cat backup.tar.gz* | tar xzpvf - -C / --numberic-owner`
+    `sudo cat backup.tar.gz* | tar xzpvf - -C / --numeric-owner`
 
 4. Run the following command if the directories `/proc`, `/sys`, `/mnt`, or `/media` don't exist after running the command in *3*:
 
