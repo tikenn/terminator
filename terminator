@@ -702,18 +702,15 @@ missed_level0_backup() {
 			"$level0_backup" \
 			| awk 'FNR == 1 {print $6}')" +"%Y%m%d")"
 	
-	# No level 0 file exists, assume it was missed
-	else
-		return 0
+		# If a backup has occurred at the required time (required time 
+		#     less than or equal to last known backup time), then backup 
+		#     was NOT missed
+		if (( "$required_backup_date" <= "$known_backup_date" )) ; then
+			return 1
+		fi
 	fi
 
-	# If a backup has not occurred at the required time (required time greater
-	#     than last known backup time), then backup was missed
-	if (( "$required_backup_date" > "$known_backup_date" )) ; then
-		return 0
-	fi
-
-	return 1
+	return 0
 }
 
 # Determines when the previous level 0 backup date should have been based on
@@ -812,7 +809,7 @@ projected_system_backup_size() {
 	echo "$backup_size"
 }
 
-# Checks for a backup that has already run today
+# Checks to see if a backup that has already run today
 # param File $1 -- tar file that would have been created this day 
 #     (expects full path)
 backup_level_rerun() {
@@ -828,11 +825,109 @@ backup_level_rerun() {
 		| awk 'FNR == 1 {print $6}')" +"%Y%m%d")" == "$(date +"%Y%m%d")" ]]
 		then
 
+		# Log error message
+		echo -n "System Backup Notice: level $backup_level already " \
+			>> "$log_file"
+		echo "successfully run today.  Terminating backup . . ." \
+			>> "$log_file"
+
 		return 0
 	fi
 
 	# backup level not already run
 	return 1
+}
+
+# Checks if there is enough disk space remaining on the local server to perform
+#     a local backup
+# param Dir $1 -- directory for local system backups
+# param File $2 -- snar file to be used for differential backup
+# param String $3 -- tar file prefix to be used for split backup files
+enough_remaining_disk_space() {
+	local systemdump_dir="$1"
+	local snar_file="$2"
+	local tar_file_prefix="$3"
+
+	# Disk space remaining in partition containing systemdump_dir
+	# Note: df returns disk space in kilobytes, converting to bytes for
+	#     comparison
+	remaining_disk_space=$(($(df "$systemdump_dir" \
+		| awk 'FNR == 2 {print $4}') * 1000 ))
+
+	# projected size of whole backup file eliminating previous backup directory
+	local projected_system_backup_size="$(projected_system_backup_size \
+		"$tar_file_prefix" "$snar_file" "$systemdump_dir")"
+
+	# If there is enough disk space for backup
+	if (("$remaining_disk_space" < "$projected_system_backup_size")) ; then
+		echo -n "System Backup Error: not enough disk space remaining for " \
+			>> "$log_file"
+		echo -n "local backup.  " >> "$log_file"
+
+		echo -n "Remaining: $(("$remaining_disk_space" / 1000000000)) GB; " \
+			>> "$log_file"
+		echo -n "Backup: $(("$projected_system_backup_size" / 1000000000)) GB. " \
+			>> "$log_file"
+		echo "Terminating backup . . ." >> "$log_file"
+
+		# There is not enough disk space remaining to perform the backup
+		return 1
+	fi
+
+	# Enough disk space remains
+	return 0
+
+}
+
+# Runs the tar command that performs local system backup with error checking
+# param Int $1 -- backup level to perform
+# param Dir $2 -- local host backup dir where all backups are stored
+# param Dir $3 -- systemdump dir where the system dumps are specifically stored
+# param File $4 -- snar file to use for differential backups
+# param File $5 -- tar file prefix to be used for split backup files
+run_tar_command() {
+	local backup_level="$1"
+	local local_host_backup_dir="$2"
+	local systemdump_dir="$3"
+	local snar_file="$4"
+	local tar_file_prefix="$5"
+
+	# Perform system backup
+	# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
+	tar cpz --listed-incremental="$snar_file" \
+		--exclude="$local_host_backup_dir/$tar_file" \
+		--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
+		--one-file-system / 2>> "$log_file" \
+		| split -d -b 1000m - "$local_host_backup_dir/$tar_file_prefix"
+
+	# Backup was successful if no error status of previous command
+	if (( "${PIPESTATUS[0]}" <= 1 )) ; then
+		# note backup level in log file
+		echo "System Backup Info:  performed level $backup_level backup" \
+			>> "$log_file"
+
+		# Level 0 backups reset everything back to start
+		if [[ "$backup_level" == "0" ]] ; then
+			reset_dumps "$systemdump_dir"
+
+		# Level 1 backups reset back to after level 0 for cycling
+		elif [[ "$backup_level" == "1" ]] ; then
+			reset_dumps "$systemdump_dir" "0"
+		fi
+
+		mv "$snar_file" "$systemdump_dir"
+		mv "$local_host_backup_dir/$tar_file_prefix"* "$systemdump_dir"
+	
+		# successful backup
+		return 0
+	
+	# Unsuccessful backup; delete files storing attempted backups
+	else
+		rm "$snar_file"
+		rm "$local_host_backup_dir/$tar_file_prefix"*
+
+		return 1
+	fi
 }
 
 # Function that actually performs entire system backup using tar
@@ -847,10 +942,6 @@ perform_system_backup() {
 	create_backup_dirs "$local_host_backup_dir" "systemdump"
 	systemdump_dir="$local_host_backup_dir/systemdump"
 
-	# df returns disk space in kilobytes, converting to bytes for comparison
-	remaining_disk_space=$(($(df "$local_host_backup_dir" \
-		| awk 'FNR == 2 {print $4}') * 1000 ))
-
 	# If last level 0 backup was missed, perform a level 0, no questions
 	# Star is present to catch first tar file due to split
 	if missed_level0_backup "$systemdump_dir" "$level0_tar_file_prefix*" \
@@ -863,81 +954,30 @@ perform_system_backup() {
 		echo "Attempting to perform level 0 backup . . ." >> "$log_file"
 	fi
 
-	# Backup files based on backup level
-	local snar_file="$(create_snar_file "$backup_level" \
-		"$systemdump_dir" "$local_host_backup_dir")"
+	# tarball prefix based on backup level
 	local tar_file_prefix="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
-	
-	# projected size of whole backup file eliminating previous backup directory
-	local projected_system_backup_size="$(projected_system_backup_size \
-		"$tar_file_prefix" "$snar_file" "$systemdump_dir")"
 
 	# Prevent re-running program on same day after successful backup from
 	#     overwriting successful backup (would mess up level)
 	if backup_level_rerun "$systemdump_dir/$tar_file_prefix*" ; then
-		
-		# Remove snar file created as it is not necessary
-		rm "$snar_file"
-
-		echo -n "System Backup Notice: level $backup_level already " \
-			>> "$log_file"
-		echo "successfully run today.  Terminating backup . . ." \
-			>> "$log_file"
-
 		return 1
 	fi
 
+	# Create snar file for differential backup
+	local snar_file="$(create_snar_file "$backup_level" \
+		"$systemdump_dir" "$local_host_backup_dir")"
+	
 	# If there is enough disk space
-	if (("$remaining_disk_space" > "$projected_system_backup_size")) ; then
-		# Perform system backup
-		# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
-		tar cpz --listed-incremental="$snar_file" \
-			--exclude="$local_host_backup_dir/$tar_file" \
-			--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
-			--one-file-system / 2>> "$log_file" \
-			| split -d -b 1000m - "$local_host_backup_dir/$tar_file_prefix"
+	if enough_remaining_disk_space "$systemdump_dir" "$snar_file" \
+		"$tar_file_prefix" ; then
 
-		# Backup was successful if no error status of previous command
-		if (( "${PIPESTATUS[0]}" <= 1 )) ; then
-			# note backup level in log file
-			echo "System Backup Info:  performed level $backup_level backup" \
-				>> "$log_file"
+		# Run backup
+		if run_tar_command "$backup_level" "$local_host_backup_dir" \
+			"$systemdump_dir" "$snar_file" "$tar_file_prefix" ; then
 
-			# Level 0 backups reset everything back to start
-			if [[ "$backup_level" == "0" ]] ; then
-				reset_dumps "$systemdump_dir"
-
-			# Level 1 backups reset back to after level 0 for cycling
-			elif [[ "$backup_level" == "1" ]] ; then
-				reset_dumps "$systemdump_dir" "0"
-
-			fi
-
-			mv "$snar_file" "$systemdump_dir"
-			mv "$local_host_backup_dir/$tar_file_prefix"* "$systemdump_dir"
-		
-			# successful backup
+			# backup successful
 			return 0
-		
-		# Unsuccessful backup; delete files storing attempted backups
-		else
-			rm "$snar_file"
-			rm "$local_host_backup_dir/$tar_file_prefix"*
-
 		fi
-
-	# there isn't enough disk space
-	else
-		echo -n "System Backup Error: not enough disk space remaining for " \
-			>> "$log_file"
-		echo -n "local backup.  " >> "$log_file"
-
-		echo -n "Remaining: $(("$remaining_disk_space" / 1000000000)) GB; " \
-			>> "$log_file"
-		echo -n "Backup: $(("$projected_system_backup_size" / 1000000000)) GB. " \
-			>> "$log_file"
-		echo "Terminating backup . . ." >> "$log_file"
-
 	fi
 
 	# An error has occurred
