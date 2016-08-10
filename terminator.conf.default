@@ -57,6 +57,18 @@ off_site_backup_freq=
 mailto=
 
 
+# -------------- #
+# Backup Options #
+# -------------- #
+
+# Setting determining whether system backups should first be stored locally
+#     before being transferred remotely or simply transferred to remote storage 
+#     with no local storage
+# Can take "yes" or "no"
+# Default value is "no"
+remote_system_backup_only=
+
+
 # --------------- #
 # Localhost Setup #
 # --------------- #
