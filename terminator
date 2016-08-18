@@ -1253,13 +1253,39 @@ backup_dir_ok() {
 	return 0
 }
 
+# Rsync command:  runs a general rsync command transferring backups to remote
+#     server
+# Excludes system file backups if remote-only backups are used
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+rsync_command() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
+
+	# Successful rsync command
+	if (( "$?" == 0 )) ; then
+		return 0
+	fi
+
+	# Unsuccessful rsync command
+	return 1
+}
+
+
 # Rsyncs to remote host daily
 # param String $1 -- domain name of host
 # param String $2 -- SSH port of host
 # param String $3 -- backup user of host
 # param String $4 -- host ssh key (no passphrase allowed)
 # param String $5 -- backup directory on remote host
-# param String $6 -- user selected schedule based on terminator.conf
 daily_rsync() {
 	local domain="$1"
 	local port="$2"
@@ -1269,18 +1295,30 @@ daily_rsync() {
 
 	rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
 
+	# Update placeholder if rsync successful
+	if (( "$?" == 0 )) ; then
+		create_placeholder "$domain" "$port" "$user" "$ssh_key" \
+			"$backup_dir"
+
 		echo -n "Remote Backup Info: performing daily remote backup to " \
 			>> "$log_file"
 		echo "host $domain" >> "$log_file"
+
+	else
+		echo -n "Remote Backup Error: monthly remote backup failed" \
+			>> "$log_file"
+
+		email_flag=1
+		email_body+=" - Remote backup\n"
+	fi
 }
 
-# Rsyncs to remote host daily
+# Rsyncs to remote host weekly, but checks if needed daily
 # param String $1 -- domain name of host
 # param String $2 -- SSH port of host
 # param String $3 -- backup user of host
 # param String $4 -- host ssh key (no passphrase allowed)
 # param String $5 -- backup directory on remote host
-# param String $6 -- user selected schedule based on terminator.conf
 weekly_rsync() {
 	local domain="$1"
 	local port="$2"
@@ -1298,19 +1336,31 @@ weekly_rsync() {
 
 		rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
 
-		echo -n "Remote Backup Info: performing weekly remote backup to " \
-			>> "$log_file"
-		echo "host $domain" >> "$log_file"
+		# Update placeholder if rsync successful
+		if (( "$?" == 0 )) ; then
+			create_placeholder "$domain" "$port" "$user" "$ssh_key" \
+				"$backup_dir"
+
+			echo -n "Remote Backup Info: performing weekly remote backup to " \
+				>> "$log_file"
+			echo "host $domain" >> "$log_file"
+
+		else
+			echo -n "Remote Backup Error: monthly remote backup failed" \
+				>> "$log_file"
+
+			email_flag=1
+			email_body+=" - Remote backup\n"
+		fi
 	fi
 }
 
-# Rsyncs to remote host daily
+# Rsyncs to remote host monthly, but checks if needed daily
 # param String $1 -- domain name of host
 # param String $2 -- SSH port of host
 # param String $3 -- backup user of host
 # param String $4 -- host ssh key (no passphrase allowed)
 # param String $5 -- backup directory on remote host
-# param String $6 -- user selected schedule based on terminator.conf
 monthly_rsync() {
 	local domain="$1"
 	local port="$2"
@@ -1345,19 +1395,31 @@ monthly_rsync() {
 
 		rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
 
-		echo -n "Remote Backup Info: performing monthly remote backup to " \
-			>> "$log_file"
-		echo "host $domain" >> "$log_file"
+		# Update placeholder if rsync successful
+		if (( "$?" == 0 )) ; then
+			create_placeholder "$domain" "$port" "$user" "$ssh_key" \
+				"$backup_dir"
+
+			echo -n "Remote Backup Info: performing monthly remote backup to " \
+				>> "$log_file"
+			echo "host $domain" >> "$log_file"
+
+		else
+			echo -n "Remote Backup Error: monthly remote backup failed" \
+				>> "$log_file"
+
+			email_flag=1
+			email_body+=" - Remote backup\n"
+		fi
 	fi
 }
 
-# Rsyncs to remote host daily
+# Rsyncs to remote host yearly, but checks if needed daily
 # param String $1 -- domain name of host
 # param String $2 -- SSH port of host
 # param String $3 -- backup user of host
 # param String $4 -- host ssh key (no passphrase allowed)
 # param String $5 -- backup directory on remote host
-# param String $6 -- user selected schedule based on terminator.conf
 yearly_rsync() {
 	local domain="$1"
 	local port="$2"
@@ -1376,9 +1438,23 @@ yearly_rsync() {
 
 		rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
 
-		echo -n "Remote Backup Info: performing yearly remote backup to " \
-			>> "$log_file"
-		echo "host $domain" >> "$log_file"
+		# Update placeholder if rsync successful
+		if (( "$?" == 0 )) ; then
+			create_placeholder "$domain" "$port" "$user" "$ssh_key" \
+				"$backup_dir"
+
+			echo -n "Remote Backup Info: performing yearly remote backup to " \
+				>> "$log_file"
+			echo "host $domain" >> "$log_file"
+
+		else
+			echo -n "Remote Backup Error: yearly remote backup failed" \
+				>> "$log_file"
+
+			email_flag=1
+			email_body+=" - Remote backup\n"
+		fi
+
 	fi
 }
 
@@ -1415,23 +1491,7 @@ rsync_host() {
 			yearly_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
 
 		fi
-
-		# Rsync failed
-		if grep -q "rsync: \|rsync error: " "$log_file" ; then
-			email_flag=1
-			email_body+=" - Remote backup\n"
-			
-			return 1
-		fi
-
-		# Successful rsync with no errors
-		create_placeholder "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
-		return 0
-
 	fi
-
-	# connection failed
-	return 1
 }
 
 # On site host backup
