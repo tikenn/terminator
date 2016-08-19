@@ -107,6 +107,14 @@ fi
 # Backup Scheduling #
 # ----------------- #
 
+# Calculates the absolute difference between two dates
+# param Date $1
+# param Date $2
+date_diff() {
+	local diff=$(( $(date -d "$1" +"%s") - $(date -d "$2" +"%s") ))
+	echo $(( ${diff#-}/(3600*24) ))
+}
+
 # Calculates the date that the previous weekly backup should have occurred based
 #     on the terminator install date
 # return Date
@@ -237,6 +245,47 @@ yearly_backup_date_reached() {
 
 	# Current date is not scheduled for a yearly backup
 	return 1
+}
+
+# Determines if a scheduled backup is supposed to occur based on a "weekly",
+#     "monthly", or "yearly" scheduled backup
+# param $1 -- backup freq ("weekly", "monthly", or "yearly")
+scheduled_backup_date_reached() {
+	local backup_freq="$1"
+
+	if [[ "$backup_freq" == "weekly" ]] ; then
+		return $(weekly_backup_date_reached)
+
+	elif [[ "$backup_freq" == "monthly" ]] ; then
+		return $(monthly_backup_date_reached)
+
+	elif [[ "$backup_freq" == "yearly" ]] ; then
+		return $(yearly_backup_date_reached)
+	fi
+
+	# Always return false if input not recognized
+	return 1
+}
+
+# Calculates the number of days since the date the previous backup should have
+#     occurred on
+# param $1 -- backup freq ("weekly", "monthly", or "yearly")
+# return Int -- number of days since previous backup
+days_since_previous_backup() {
+	local backup_freq="$1"
+	local date_difference
+
+	if [[ "$backup_freq" == "weekly" ]] ; then
+		date_difference="$(date_diff "$(date)" "$(previous_weekly_backup_date)")"
+
+	elif [[ "$backup_freq" == "monthly" ]] ; then
+		date_difference="$(date_diff "$(date)" "$(previous_monthly_backup_date)")"
+
+	elif [[ "$backup_freq" == "yearly" ]] ; then
+		date_difference="$(date_diff "$(date)" "$(previous_yearly_backup_date)")"
+	fi
+
+	echo "$date_difference"
 }
 
 
@@ -569,14 +618,6 @@ set_default_dump_schedule() {
 
 set_default_dump_schedule "system_backup_freq" "weekly"
 
-# Calculates the absolute difference between two dates
-# param Date $1
-#param Date $2
-date_diff() {
-	local diff=$(( $(date -d "$1" +"%s") - $(date -d "$2" +"%s") ))
-	echo $(( ${diff#-}/(3600*24) ))
-}
-
 # Cycles through backup levels 1 - 6 when provided with a date difference 
 #     greater than 1
 # param Int $1 -- difference between current date and previous checkpoint
@@ -597,6 +638,31 @@ weekly_backup_cycle_level() {
 
 	echo "$backup_level"
 }
+
+# Calculates the backup level based on the days since the previous backup
+# Sets backup level to 0 if backup date reached based on 
+#     $system_backup_freq in terminator.conf
+# return Int -- backup level
+backup_cycle_level() {
+	local date_difference="$(days_since_previous_backup "$system_backup_freq")"
+	local backup_level
+
+	if scheduled_backup_date_reached "$system_backup_freq" ; then
+		backup_level=0
+
+	# prevents level 0 by simply setting to 6
+	elif (($date_difference % 6 == 0)) ; then
+		backup_level=6
+
+	# Cycle of 6 (total of 7 with level 0)
+	else
+		backup_level=$(($date_difference % 6))
+	fi
+
+	echo "$backup_level"
+}
+
+backup_cycle_level "$backup_start" "$(date)"
 
 # Calculates the level of the backup that should be performed
 # Levels are on a daily schedule of 0, 1, 2, 3, 4, 5, 6, 1, 2, 3... (until next 
@@ -985,7 +1051,7 @@ perform_system_backup() {
 	email_body+=" - System backup\n"
 }
 
-perform_system_backup
+# perform_system_backup
 
 echo >> "$log_file"
 
@@ -1509,21 +1575,20 @@ else
 
 fi
 
-# Off site host backup
-if remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
-	"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir"
-then
-	rsync_host "$off_site_host_domain" "$off_site_host_port" \
-		"$off_site_host_user" "$off_site_host_ssh_key" \
-		"$off_site_host_backup_dir" "$off_site_backup_freq"
+# # Off site host backup
+# if remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
+# 	"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir"
+# then
+# 	rsync_host "$off_site_host_domain" "$off_site_host_port" \
+# 		"$off_site_host_user" "$off_site_host_ssh_key" \
+# 		"$off_site_host_backup_dir" "$off_site_backup_freq"
 
-# No external hosts
-else
-	echo -n "Remote Backup Notice: no off-site host login parameters.  " \
-		>> "$log_file"
-	echo "Skipping . . . " >> "$log_file"
-
-fi
+# # No external hosts
+# else
+# 	echo -n "Remote Backup Notice: no off-site host login parameters.  " \
+# 		>> "$log_file"
+# 	echo "Skipping . . . " >> "$log_file"
+# fi
 
 # Email if any errors in the program
-email_errors "$email_body" "$error_flag"
+# email_errors "$email_body" "$error_flag"
