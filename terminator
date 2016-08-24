@@ -188,6 +188,23 @@ previous_yearly_backup_date() {
 	echo "$past_backup_date"
 }
 
+# Calculate the date that the previous scheduled backup date should have 
+#     occurred on based on "weekly", "monthly", or "yearly" cycles
+# param $1 -- backup freq ("weekly", "monthly", or "yearly")
+previous_scheduled_backup_date() {
+	local backup_freq="$1"
+
+	if [[ "$backup_freq" == "weekly" ]] ; then
+		echo "$(previous_weekly_backup_date)"
+
+	elif [[ "$backup_freq" == "monthly" ]] ; then
+		echo "$(previous_monthly_backup_date)"
+
+	elif [[ "$backup_freq" == "yearly" ]] ; then
+		echo "$(previous_yearly_backup_date)"
+	fi
+}
+
 # Checks to see if the current date matches the date for a scheduled weekly 
 #     backup based on backup_start in terminator.conf
 weekly_backup_date_reached() {
@@ -618,6 +635,7 @@ set_default_dump_schedule() {
 
 set_default_dump_schedule "system_backup_freq" "weekly"
 
+# TODO: delete function
 # Cycles through backup levels 1 - 6 when provided with a date difference 
 #     greater than 1
 # param Int $1 -- difference between current date and previous checkpoint
@@ -662,8 +680,7 @@ backup_cycle_level() {
 	echo "$backup_level"
 }
 
-backup_cycle_level "$backup_start" "$(date)"
-
+# TODO: delete function
 # Calculates the level of the backup that should be performed
 # Levels are on a daily schedule of 0, 1, 2, 3, 4, 5, 6, 1, 2, 3... (until next 
 #     level 0 backup when everything starts over)
@@ -750,7 +767,6 @@ reset_dumps() {
 # Determines if a level 0 backup has been missed
 # param Dir $1 -- backup directory
 # param File $2 -- name of file that is supposed to contain level 0 backup
-# param Date $3 -- date that level 0 backup was supposed to take place
 missed_level0_backup() {
 	# Backup directory
 	local backup_dir="$1"
@@ -759,19 +775,21 @@ missed_level0_backup() {
 	local level0_backup="$(ls "$backup_dir/"${2} | awk 'FNR == 1 {print $1}')"
 
 	# most recent backup date that should have occurred
-	local required_backup_date=$(date -d "$3" +"%Y%m%d")
+	local expected_previous_backup_date=$(previous_scheduled_backup_date \
+		"$system_backup_freq")
 
 	# Check if a level 0 backup exists in the first place (allow blob expansion)
 	if [[ "$(ls -A "$level0_backup")" ]] ; then
 		# backup exists, get date (only need first row of ls due to ls on file)
-		local known_backup_date="$(date -d "$(ls -lFt --full-time \
+		local last_known_backup_date="$(date -d "$(ls -lFt --full-time \
 			"$level0_backup" \
 			| awk 'FNR == 1 {print $6}')" +"%Y%m%d")"
 	
 		# If a backup has occurred at the required time (required time 
 		#     less than or equal to last known backup time), then backup 
 		#     was NOT missed
-		if (( "$required_backup_date" <= "$known_backup_date" )) ; then
+		if (( "$expected_previous_backup_date" <= "$last_known_backup_date" ))
+		then
 			return 1
 		fi
 	fi
@@ -779,6 +797,7 @@ missed_level0_backup() {
 	return 0
 }
 
+# TODO: delete function
 # Determines when the previous level 0 backup date should have been based on
 #     system_backup_freq in terminator.conf
 previous_level0_backup_date() {
@@ -812,34 +831,27 @@ create_snar_file() {
 	local local_host_backup_dir="$3"
 
 	local snar_file="$HOSTNAME.systemdump.level_$backup_level.snar"
-	local level0_snar_file="$HOSTNAME.systemdump.level_0.snar"
 	local newest_snar="$(ls -t "$systemdump_dir/"*.snar \
 			| awk 'FNR == 1 {print $1}')"
 
-	# Create snar file for backup_level being performed from most recent snar
-	#     file
-	# All level 1 backups should restart back from level 0 backup
-	if [[ "$backup_level" == "1" ]] ; then
-		cp "$systemdump_dir/$level0_snar_file" \
-			"$local_host_backup_dir/$snar_file"
-
-	# Missed backups (other than level 0, which is accounted for above) are of 
-	#     no consequence becaause failed backups do not create snar files (they
-	#     don't track changes) and backup will catch all changes since most 
-	#     recent snar file
-	elif ! [[ "$backup_level" == "0" ]] ; then
+	# Unless backup_level == 0, snar file should be created from the most recent
+	#     snar file previously created
+	if ! [[ "$backup_level" == "0" ]] ; then
 		cp "$newest_snar" "$local_host_backup_dir/$snar_file"
-
+	
+	# Level 0 snar files should start over
+	else
+		touch "$local_host_backup_dir/$snar_file"
 	fi
 
-	# return
+	# return the name of the snar file created
 	echo "$local_host_backup_dir/$snar_file"
 }
 
 # Projects the system backup tar file size before actually performing backup
 # Will only grab the first file in a list of files
 # param File $1 -- tar file to be used for backup
-# param File $2 -- snar file indicating level of backup
+# param File $2 -- snar file (full path) indicating level of backup
 # param Dir $3 -- backup directory to exclude
 # return Int -- backup size in bytes
 projected_system_backup_size() {
@@ -847,15 +859,9 @@ projected_system_backup_size() {
 	local snar_file="$2"
 	local systemdump_dir="$3"
 
-	# Temporary snar file for checking backup size without using snar file that
-	#     will actually be used for backup
-	local temp_snar="$local_host_backup_dir/remaining_disk_space_check.snar"
-
-	# Only copy file if exists; otherwise, let tar create it
-	if [[ -f "$local_host_backup_dir/$snar_file" ]] ; then
-		# Create temp snar file for checking backup disk size
-		cp "$local_host_backup_dir/$snar_file" \
-			"$local_host_backup_dir/remaining_disk_space_check.snar"
+	# Create temp snar file for checking backup disk size from original
+	if [[ -f "$snar_file" ]] ; then
+		cp "$snar_file" "$local_host_backup_dir/remaining_disk_space_check.snar"
 	fi
 
 	# Projected backup size of tar backup
@@ -998,6 +1004,8 @@ run_tar_command() {
 
 # Function that actually performs entire system backup using tar
 perform_system_backup() {
+	# TODO:  change this to
+	# local previous_level0_backup_date="$(previous_scheduled_backup_date "$system_backup_freq")"
 	local previous_level0_backup_date="$(previous_level0_backup_date)"
 	local level0_tar_file_prefix="$HOSTNAME.systemdump.level_0.tar.gz"
 	local backup_level="$(backup_level)"
@@ -1011,8 +1019,7 @@ perform_system_backup() {
 	# If last level 0 backup was missed, perform a level 0, no questions
 	# Star is present to catch first tar file due to split
 	if missed_level0_backup "$systemdump_dir" "$level0_tar_file_prefix*" \
-		"$previous_level0_backup_date" ; then
-
+	then
 		backup_level=0
 
 		echo -n "System Backup Notice: previous level 0 backup missed.  " \
