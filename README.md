@@ -73,7 +73,7 @@ If a MySQL-compatible database is present on the system, this will allow it to b
 - Finally, place public SSH keys on remote servers (see [next section](#ssh-keys))
 
 ## SSH Keys (optional)
-- The setup file (`./setup`) will create SSH Keys for remote hosts and set up `terminator.conf` with their location upon request (however, these can be set up manually configured if desired)
+- The setup file (`./setup`) will create SSH Keys for remote hosts and set up `terminator.conf` with their location upon request (however, these can be set up manually if desired)
 - `terminator` requires **unencrypted** SSH Keys to login to remote hosts
 - Once created, `./setup` will automatically store the private key(s)' location
 - Place the public key `*.pub` on the remote host in $HOME/.ssh/ and rename it to `authorized_hosts` ($HOME refers to the home directory of the backup user on the remote host; see [Remote Host Setup](#remote-host-setup))
