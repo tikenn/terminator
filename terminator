@@ -271,7 +271,10 @@ yearly_backup_date_reached() {
 scheduled_backup_date_reached() {
 	local backup_freq="$1"
 
-	if [[ "$backup_freq" == "weekly" ]] ; then
+	if [[ "$backup_freq" == "daily" ]] ; then
+		return 0
+
+	elif [[ "$backup_freq" == "weekly" ]] ; then
 		return $(weekly_backup_date_reached)
 
 	elif [[ "$backup_freq" == "monthly" ]] ; then
@@ -796,7 +799,7 @@ projected_system_backup_size() {
 		--warning=none \
 		--listed-incremental="$temp_snar" \
 		--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
-		--one-file-system /home/tikenn/Desktop/test | wc -c)"
+		--one-file-system / | wc -c)"
 
 	# Delete temporary snar file for checking remaining disk space for backup
 	rm "$temp_snar"
@@ -858,7 +861,7 @@ run_tar_command() {
 	# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 	tar cpz --listed-incremental="$snar_file" \
 		--exclude="$systemdump_dir/*" \
-		--one-file-system /home/tikenn/Desktop/test 2>> "$log_file" \
+		--one-file-system / 2>> "$log_file" \
 		| split -d -b 1000m - "$local_host_backup_dir/$tar_file_prefix"
 
 	# Backup was successful if no error status of previous command
@@ -1013,7 +1016,7 @@ create_placeholder() {
 		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 		-o StrictHostKeyChecking=no '
 		
-		# Create placeholder if not exists
+		# Create placeholder if it does not already exist
 		if ! [[ -f '"$backup_dir/"'placeholder ]] ; then
 			echo "DO NOT REMOVE!!!!" > '"$backup_dir/"'placeholder
 			echo -n "This is a placeholder file " >> '"$backup_dir/"'placeholder
@@ -1026,7 +1029,7 @@ create_placeholder() {
 	'
 }
 
-# Determines if previous remote backup was missed
+# Determines if previous remote backup was missed using a placeholder file
 # param String $1 -- domain name of host
 # param String $2 -- SSH port of host
 # param String $3 -- backup user of host
@@ -1042,7 +1045,8 @@ missed_remote_backup() {
 	local user="$3"
 	local ssh_key="$4"
 	local backup_dir="$5"
-	local required_backup_date="$(date -d "$6" +"%Y%m%d")"
+	local required_backup_date="$(date -d \
+		"$(previous_scheduled_backup_date "$system_backup_freq")" +"%Y%m%d")"
 	local known_backup_date
 
 	known_backup_date=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
@@ -1242,185 +1246,6 @@ rsync_command() {
 	return 1
 }
 
-
-# Rsyncs to remote host daily
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-daily_rsync() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-
-	rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
-
-	# Update placeholder if rsync successful
-	if (( "$?" == 0 )) ; then
-		create_placeholder "$domain" "$port" "$user" "$ssh_key" \
-			"$backup_dir"
-
-		echo -n "Remote Backup Info: performing daily remote backup to " \
-			>> "$log_file"
-		echo "host $domain" >> "$log_file"
-
-	else
-		echo -n "Remote Backup Error: monthly remote backup failed" \
-			>> "$log_file"
-
-		email_flag=1
-		email_body+=" - Remote backup\n"
-	fi
-}
-
-# Rsyncs to remote host weekly, but checks if needed daily
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-weekly_rsync() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-
-	local current_weekday="$(date +"%A")"
-	local backup_start_weekday="$(date -d "$backup_start" +"%A")"
-
-
-	if missed_remote_backup "$domain" "$port" "$user" "$ssh_key" "$backup_dir" \
-		"$(previous_weekly_backup_date)" \
-		|| [[ "$current_weekday" == "$backup_start_weekday" ]] ; then
-
-		rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
-
-		# Update placeholder if rsync successful
-		if (( "$?" == 0 )) ; then
-			create_placeholder "$domain" "$port" "$user" "$ssh_key" \
-				"$backup_dir"
-
-			echo -n "Remote Backup Info: performing weekly remote backup to " \
-				>> "$log_file"
-			echo "host $domain" >> "$log_file"
-
-		else
-			echo -n "Remote Backup Error: monthly remote backup failed" \
-				>> "$log_file"
-
-			email_flag=1
-			email_body+=" - Remote backup\n"
-		fi
-	fi
-}
-
-# Rsyncs to remote host monthly, but checks if needed daily
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-monthly_rsync() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-
-	local current_day_of_month="$(date +"%d")"
-	local current_month="$(date +"%m")"
-
-	# http://stackoverflow.com/questions/12381501/how-to-use-bash-to-get-the-last-day-of-each-month-for-the-current-year-without-u
-	local current_month_total_days="$(date -d "$current_month/1 \
-		+ 1 month - 1 day" +"%-d")"
-
-	local backup_start_day_of_month="$(date -d "$backup_start" +"%-d")"
-
-	# If backup_start_day_of_month is greater than the total days in the CURRENT
-	#     month, then the scheduled backup day will be the last day of the 
-	#     current month
-	if (("$backup_start_day_of_month" > "$current_month_total_days")) ; then
-		local scheduled_backup_day="$current_month_total_days"
-	else
-		local scheduled_backup_day="$backup_start_day_of_month"
-	fi
-
-	# Need to backup if last one was missed or if it's the same day of the month
-	#     (or last day of the month, whichever comes first) as program 
-	#     installation (backup_start)
-	if missed_remote_backup "$domain" "$port" "$user" "$ssh_key" "$backup_dir" \
-		"$(previous_monthly_backup_date)" || \
-		[[ "$current_day_of_month" == "$scheduled_backup_day" ]] ; then
-
-		rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
-
-		# Update placeholder if rsync successful
-		if (( "$?" == 0 )) ; then
-			create_placeholder "$domain" "$port" "$user" "$ssh_key" \
-				"$backup_dir"
-
-			echo -n "Remote Backup Info: performing monthly remote backup to " \
-				>> "$log_file"
-			echo "host $domain" >> "$log_file"
-
-		else
-			echo -n "Remote Backup Error: monthly remote backup failed" \
-				>> "$log_file"
-
-			email_flag=1
-			email_body+=" - Remote backup\n"
-		fi
-	fi
-}
-
-# Rsyncs to remote host yearly, but checks if needed daily
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-yearly_rsync() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-
-	local current_month_day="$(date +"%-m%d")"
-	local backup_start_month_day="$(date -d "$backup_start" +"%-m%d")"
-
-	# Need to backup if last one was missed or if it's the same day of the year
-	#     as program installation (backup_start)
-	if missed_remote_backup "$domain" "$port" "$user" "$ssh_key" "$backup_dir" \
-		"$(previous_yearly_backup_date )" || \
-		(("$current_month_day" == "$backup_start_month_day")) ; then
-
-		rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
-
-		# Update placeholder if rsync successful
-		if (( "$?" == 0 )) ; then
-			create_placeholder "$domain" "$port" "$user" "$ssh_key" \
-				"$backup_dir"
-
-			echo -n "Remote Backup Info: performing yearly remote backup to " \
-				>> "$log_file"
-			echo "host $domain" >> "$log_file"
-
-		else
-			echo -n "Remote Backup Error: yearly remote backup failed" \
-				>> "$log_file"
-
-			email_flag=1
-			email_body+=" - Remote backup\n"
-		fi
-
-	fi
-}
-
 # Backups to remote hosts at user selected frequency (terminator.conf)
 # param String $1 -- domain name of host
 # param String $2 -- SSH port of host
@@ -1436,56 +1261,78 @@ rsync_host() {
 	local backup_dir="$5"
 	local backup_schedule="$6"
 
-	# If everything is ready for login
-	if ssh_key_ok "$ssh_key" && host_login_ok "$domain" "$port" "$user" \
-		"$ssh_key" && backup_dir_ok "$domain" "$port" "$user" "$ssh_key" \
-		"$backup_dir" ; then
+	# Check remote host health for remote backup
+	if ! ssh_key_ok "$ssh_key" \
+		|| ! host_login_ok "$domain" "$port" "$user" "$ssh_key" \
+		|| ! backup_dir_ok "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+		then
 
-		if [[ "$backup_schedule" == "daily" ]] ; then
-			daily_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+		# something went wrong with the remote host, terminate rsync
+		return 1
+	fi
 
-		elif [[ "$backup_schedule" == "weekly" ]] ; then
-			weekly_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+	# If scheduled time for remote backup ready or remote backup missed
+	if scheduled_backup_date_reached "$backup_schedule" \
+		|| missed_remote_backup "$domain" "$port" "$user" "$ssh_key" \
+			"$backup_dir"
+		then
 
-		elif [[ "$backup_schedule" == "monthly" ]] ; then
-			monthly_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+		rsync_command "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
 
-		elif [[ "$backup_schedule" == "yearly" ]] ; then
-			yearly_rsync "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+		if (( "$?" == 0 )) ; then
+			create_placeholder "$domain" "$port" "$user" "$ssh_key" \
+				"$backup_dir"
 
+			echo -n "Remote Backup Info: performed scheduled remote " \
+				>> "$log_file"
+			echo "host $domain" >> "$log_file"
+
+		else
+			echo -n "Remote Backup Error: scheduled remote backup to "\
+				>> "$log_file"
+			echo "$domain failed" \
+				>> "$log_file"
+
+			email_flag=1
+			email_body+=" - Remote backup to $domain\n"
 		fi
 	fi
 }
 
-# On site host backup
-if remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
-	"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir"
-then
-	rsync_host "$on_site_host_domain" "$on_site_host_port" \
-		"$on_site_host_user" "$on_site_host_ssh_key" \
-		"$on_site_host_backup_dir" "$on_site_backup_freq"
+# Performs actual rsync if requested
+perform_rsync() {
+	# On site host backup
+	if remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
+		"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir"
+	then
+		rsync_host "$on_site_host_domain" "$on_site_host_port" \
+			"$on_site_host_user" "$on_site_host_ssh_key" \
+			"$on_site_host_backup_dir" "$on_site_backup_freq"
 
-else
-	echo -n "Remote Backup Notice: no on-site host login parameters.  " \
-		>> "$log_file"
-	echo "Skipping . . . " >> "$log_file"
+	else
+		echo -n "Remote Backup Notice: no on-site host login parameters.  " \
+			>> "$log_file"
+		echo "Skipping . . . " >> "$log_file"
 
-fi
+	fi
 
-# # Off site host backup
-# if remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
-# 	"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir"
-# then
-# 	rsync_host "$off_site_host_domain" "$off_site_host_port" \
-# 		"$off_site_host_user" "$off_site_host_ssh_key" \
-# 		"$off_site_host_backup_dir" "$off_site_backup_freq"
+	# Off site host backup
+	if remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
+		"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir"
+	then
+		rsync_host "$off_site_host_domain" "$off_site_host_port" \
+			"$off_site_host_user" "$off_site_host_ssh_key" \
+			"$off_site_host_backup_dir" "$off_site_backup_freq"
 
-# # No external hosts
-# else
-# 	echo -n "Remote Backup Notice: no off-site host login parameters.  " \
-# 		>> "$log_file"
-# 	echo "Skipping . . . " >> "$log_file"
-# fi
+	# No external hosts
+	else
+		echo -n "Remote Backup Notice: no off-site host login parameters.  " \
+			>> "$log_file"
+		echo "Skipping . . . " >> "$log_file"
+	fi
+}
+
+perform_rsync
 
 # Email if any errors in the program
-# email_errors "$email_body" "$error_flag"
+email_errors "$email_body" "$error_flag"
