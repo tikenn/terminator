@@ -18,6 +18,7 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
 - [Restore](#restore)
     - [Database Restore](#database-restore)
     - [System Restore](#system-restore)
+    - [Individual File Restore](#individual-file-restore)
 - [Dependencies](#dependencies)
 
 # Features
@@ -154,6 +155,15 @@ Please note that this is a MySQL-specific protocol
 5. If database restore is necessary, use the most recent file in $BACKUP_DIR/mysqldump with the following command:
 
     `mysql -u root -p --all-databases < backup.sql`
+
+## Individual File Restore
+1. To verify the existence of a file in a backup level, use the following command to list all files in a specific directory in a *.tar.gz file for a specific backup level (note that the leading "/" is removed from the path)
+
+    `sudo cat backup.tar.gz* | tar tzvf - path/to/directory_or_file`
+    
+2. Once the file or directory is verified, use the following command to extract it
+
+    `sudo cat backup.tar.gz* | tar xzpvf - path/to/directory_or_file`
 
 # Dependencies
 Terminator primarily uses standard Linux tools; however, email notifications requires installation of email software.  These are installed with `./setup`.  Also, remote backups use *rsync*, but this is assumed to be pre-installed on the system.
