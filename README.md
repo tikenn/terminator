@@ -8,8 +8,8 @@ Backup and system maintenance for Debian-based systems and MySQL style databases
     - [Installation](#installation)
     - [Emails](#emails-optional)
     - [Database Setup](#database-setup-optional)
-    - [Remote Host Setup](#remote-host-setup)
-    - [SSH Keys](#ssh-keys)
+    - [Remote Host Setup](#remote-host-setup-optional)
+    - [SSH Keys](#ssh-keys-optional)
 - [How it works](#how-it-works)
     - [Configuration File](#configuration-file)
     - [Programs Used](#programs-used)
@@ -60,7 +60,7 @@ If a MySQL-compatible database is present on the system, this will allow it to b
     - `local_host_db_user`:  root user of MySQL-compatible database
     - `local_host_db_pass`:  root password of MySQL-compatible database
 
-## Remote Host Setup
+## Remote Host Setup (optional)
 - `terminator.conf` allows for two remote hosts based on the principle of having an on-site and off-site backup
 - In order to login to a remote host, `terminator` will require the following information per host in `terminator.conf`
     - IP Address or Domain name (`on_site_host_domain=` and `off_site_host_domain=`)
@@ -72,8 +72,8 @@ If a MySQL-compatible database is present on the system, this will allow it to b
 - After filling out the appropriate sections of `terminator.conf`, `terminator` will use ***rsync*** to manage remote backups
 - Finally, place public SSH keys on remote servers (see [next section](#ssh-keys))
 
-## SSH Keys
-- The setup file (`./setup`) will create SSH Keys for remote hosts and set up `terminator.conf` with their location upon request (however, these can be set up manually configured if desired)
+## SSH Keys (optional)
+- The setup file (`./setup`) will create SSH Keys for remote hosts and set up `terminator.conf` with their location upon request (however, these can be set up manually if desired)
 - `terminator` requires **unencrypted** SSH Keys to login to remote hosts
 - Once created, `./setup` will automatically store the private key(s)' location
 - Place the public key `*.pub` on the remote host in $HOME/.ssh/ and rename it to `authorized_hosts` ($HOME refers to the home directory of the backup user on the remote host; see [Remote Host Setup](#remote-host-setup))
