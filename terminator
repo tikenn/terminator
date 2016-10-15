@@ -1117,7 +1117,7 @@ ssh_key_ok() {
 	# SSH key is encrypted and can't be used
 	elif grep -q "ENCRYPTED" "$ssh_key" ; then
 		error_flag=1
-		email_body+=" - Remote backup\n"
+		email_body+=" - Remote backup: $ssh_key\n"
 
 		echo -n "Remote Backup Error: $ssh_key ssh key encrypted.  " \
 			>> "$log_file"
@@ -1148,7 +1148,7 @@ host_login_ok() {
 		-o StrictHostKeyChecking=no exit ; then
 
 		error_flag=1
-		email_body+=" - Remote backup\n"
+		email_body+=" - Remote backup to $domain\n"
 
 		echo -n "Remote Backup Error: host $domain unable to be " \
 			>> "$log_file"
@@ -1195,7 +1195,7 @@ backup_dir_ok() {
 
 	if ! [[ "$file_owner" == "$user" ]] ; then
 		error_flag=1
-		email_body+=" - Remote backup\n"
+		email_body+=" - Remote backup to $domain\n"
 
 		echo -n "Remote Backup Error: $backup_dir on host $domain not owned " \
 			>> "$log_file"
@@ -1207,7 +1207,7 @@ backup_dir_ok() {
 
 	if ! [[ "$file_permissions" == drwx* ]] ; then
 		error_flag=1
-		email_body+=" - Remote backup\n"
+		email_body+=" - Remote backup to $domain\n"
 
 		echo -n "Remote Backup Error: $backup_dir on host $domain does not " \
 			>> "$log_file"
