@@ -310,6 +310,48 @@ days_since_previous_backup() {
 }
 
 
+# ------------------------------- #
+# Generic Remote Backup Functions #
+# ------------------------------- #
+
+# Detects "y", "n", "yes", and "no" user response in a case-insensitive manner
+# param String $1
+## Ex: yes_response "y" --> returns 0
+## Ex: yes_response "yes" --> returns 0
+## Ex: yes_response "n" --> returns 0
+## Ex: yes_response "no" --> returns 0
+## Ex: yes_response "" --> returns 1
+## Ex: yes_response "gobble de guk" --> returns 1
+yes_no_response() {
+	if [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = y ]] \
+		|| [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = yes ]] \
+		|| [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = n ]] \
+		|| [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = no ]] ; then
+
+		return 0
+	else
+		return 1
+	fi
+}
+
+# Sets the default value of remote_system_backup_only indicating whether only 
+#     remote backups are allowed or not
+# param Var (as string) $1 -- variable name passed as string
+# param String $2 -- default value of the variable name passed as the first parameter
+set_default_backup_style() {
+	local var_remote_backup="$1"
+	local default_value="$2"
+
+	if [[ -n ${!var_remote_backup} ]] && yes_no_response ; then
+		return 0
+
+	eval "$var_remote_backup"\="$default_value"
+	return 1
+}
+
+set_default_backup_style "remote_system_backup_only" "no"
+
+
 # --------------- #
 # Database Backup #
 # --------------- #
@@ -1332,7 +1374,9 @@ perform_rsync() {
 	fi
 }
 
-perform_rsync
+# Only perform an rsync if local backup is allowed
+# If local backup is not allowed the systems above will take care of the remote part as well
+(( "$remote_system_backup_only" == "no" )) && perform_rsync
 
 # Email if any errors in the program
 email_errors "$email_body" "$error_flag"
