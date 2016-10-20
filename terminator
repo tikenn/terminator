@@ -344,6 +344,7 @@ set_default_backup_style() {
 
 	if [[ -n ${!var_remote_backup} ]] && yes_no_response ; then
 		return 0
+	fi
 
 	eval "$var_remote_backup"\="$default_value"
 	return 1
@@ -351,6 +352,53 @@ set_default_backup_style() {
 
 set_default_backup_style "remote_system_backup_only" "no"
 
+# Determines if previous remote backup was missed using a placeholder file
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+# param Date $6 -- date backup was supposed to occur on for time frame
+## Ex: current_date="2016-01-01"
+### missed_remote_backup ... "backup/mysqldump/weekly" "2016-01-01" --> 1
+### missed_remote_backup ... "backup/mysqldump/weekly" "2016-01-02" --> 0
+missed_remote_backup() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+	local required_backup_date="$(date -d "$6" +"%Y%m%d")"
+	local known_backup_date
+
+	known_backup_date=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no '
+		
+		# Check if directory has placeholder file because date will set to 
+		# current date if it receives a null value
+		if [[ "$(ls -A '$backup_dir'/placeholder)" ]] ; then
+			# Directory filled, check date of most recent file
+			known_backup_date="$(date -d "$(ls -lFt --full-time \
+				'$backup_dir/placeholder' | awk "FNR == 2 {print \$6}")" \
+				+"%Y%m%d")"
+		
+		else
+			# Directory is empty, set date to nothing manually
+			known_backup_date=0
+		fi
+
+		echo "$known_backup_date"
+	')
+
+	# If a backup has not occurred at the required time (required time greater
+	#     than last known backup time), then backup was missed
+	if (( "$required_backup_date" > "$known_backup_date" )) ; then
+		return 0
+	fi
+
+	return 1
+}
 
 # --------------- #
 # Database Backup #
@@ -462,15 +510,16 @@ missed_local_backup() {
 	return 1
 }
 
+
 # Deletes oldest backup file in specified directory if more files are present 
 #     than the listed number
 # param Dir $1 -- directory storing backups to be curated
 # param Int $2 -- maximum number of files in backup location
 ## Ex: 8 files in directory (dir.bak)
-### curate_backups dir.bak 7 --> deletes oldest file in dir.bak
-curate_backups() {
-	backup_dir="$1"
-	backup_dir_rollover="$2"
+### curate_local_backups dir.bak 7 --> deletes oldest file in dir.bak
+curate_local_backups() {
+	local backup_dir="$1"
+	local backup_dir_rollover="$2"
 
 	file_count="$(ls -1 "$backup_dir" | wc -l)"
 
@@ -488,13 +537,59 @@ curate_backups() {
 	done
 }
 
+# Deletes oldest backup file in specified directory if more files are present 
+#     than the listed number
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param Dir $5 -- directory storing backups to be curated
+# param Int $6 -- maximum number of files in backup location
+## Ex: 8 files in directory (dir.bak)
+### curate_local_backups dir.bak 7 --> deletes oldest file in dir.bak
+curate_remote_backups() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+	local backup_dir_rollover="$6"
+
+	files_removed=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no '
+
+		file_count="$(ls -1 '"$backup_dir"' | wc -l)"
+		files_removed=0
+
+		# Remove files until only the amount in rollover exist
+		while (('"$file_count"' > '"$backup_dir_rollover"')) ; do
+			# Find oldest file and remove it
+			oldest_file="$(ls -lFtr '"$backup_dir"' | awk "FNR == 2 {print \$9}")"
+			
+			rm -rf "$backup_dir/$oldest_file"
+			
+			# Reset count
+			file_count="$(ls -1 "$backup_dir" | wc -l)"
+			(( files_removed++ ))
+		done
+
+		echo "$files_removed"
+	')
+
+	for (( i = 0; i < files_removed; i++)); do
+		echo "DB Backup Info: removing old file in $backup_dir . . . " \
+			>> "$log_file"
+	done
+}
+
 # Schedules the daily backup by performing mysqldump and gzipping file, errors
 #     out if no access
 # param String $1 -- root user for db backup
 # param String $2 -- root user password for db backup
 # param Dir $3 -- directory storing daily backups
 # param File $3 -- name of backup file to store backup
-daily_db_backup() {
+local_daily_db_backup() {
 	local db_user="$1"
 	local db_pass="$2"
 	local destination_dir="$3"
@@ -513,7 +608,7 @@ daily_db_backup() {
 	# compress backup
 	gzip "$db_backup_file"
 
-	curate_backups "$destination_dir" "$daily_db_backup_rollover"
+	curate_local_backups "$destination_dir" "$daily_db_backup_rollover"
 	return 0
 }
 
@@ -522,7 +617,7 @@ daily_db_backup() {
 #     directory
 # param Dir $1 -- destination directory
 # param File $2 -- backup file to copy
-weekly_db_backup() {
+local_weekly_db_backup() {
 	local destination_dir="$1"
 	local db_backup_file="$2"
 
@@ -535,7 +630,7 @@ weekly_db_backup() {
 		cp "$db_backup_file" "$destination_dir"
 		echo "DB Backup Info: performed weekly backup" >> "$log_file"
 
-		curate_backups "$destination_dir" "$weekly_db_backup_rollover"
+		curate_local_backups "$destination_dir" "$weekly_db_backup_rollover"
 	fi
 }
 
@@ -544,7 +639,7 @@ weekly_db_backup() {
 #     backup file to specified directory
 # param Dir $1 -- destination directory
 # param File $2 -- backup file to copy
-monthly_db_backup() {
+local_monthly_db_backup() {
 	local destination_dir="$1"
 	local db_backup_file="$2"
 
@@ -558,7 +653,7 @@ monthly_db_backup() {
 		cp "$db_backup_file" "$destination_dir"
 		echo "DB Backup Info: performed monthly backup" >> "$log_file"
 
-		curate_backups "$destination_dir" "$monthly_db_backup_rollover"
+		curate_local_backups "$destination_dir" "$monthly_db_backup_rollover"
 	fi
 }
 
@@ -567,7 +662,7 @@ monthly_db_backup() {
 #     file to specified directory
 # param Dir $1 -- destination directory
 # param File $2 -- backup file to copy
-yearly_db_backup() {
+local_yearly_db_backup() {
 	local destination_dir="$1"
 	local db_backup_file="$2"
 
@@ -580,7 +675,7 @@ yearly_db_backup() {
 		cp "$db_backup_file" "$destination_dir"
 		echo "DB Backup Info: performed yearly backup" >> "$log_file"
 
-		curate_backups "$destination_dir" "$yearly_db_backup_rollover"
+		curate_local_backups "$destination_dir" "$yearly_db_backup_rollover"
 	fi
 }
 
@@ -592,15 +687,15 @@ backup_db() {
 
 	# Perform initial daily backup, and, if successful, perform other timed
 	#     backups
-	if daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
+	if local_daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
 		"$local_host_backup_dir/mysqldump/daily" "$db_backup_file" ; then
 
 		# Perform timed backups if appropriate
-		weekly_db_backup "$local_host_backup_dir/mysqldump/weekly" \
+		local_weekly_db_backup "$local_host_backup_dir/mysqldump/weekly" \
 			"$db_backup_file.gz"
-		monthly_db_backup "$local_host_backup_dir/mysqldump/monthly" \
+		local_monthly_db_backup "$local_host_backup_dir/mysqldump/monthly" \
 			"$db_backup_file.gz"
-		yearly_db_backup "$local_host_backup_dir/mysqldump/yearly" \
+		local_yearly_db_backup "$local_host_backup_dir/mysqldump/yearly" \
 			"$db_backup_file.gz"
 	
 	else
@@ -993,7 +1088,7 @@ perform_system_backup() {
 	return 0
 }
 
-perform_system_backup
+# perform_system_backup
 
 echo >> "$log_file"
 
@@ -1069,55 +1164,6 @@ create_placeholder() {
 		# Change the date to current date for future reference
 		touch -d "$(date)" '"$backup_dir/"'placeholder
 	'
-}
-
-# Determines if previous remote backup was missed using a placeholder file
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-# param Date $6 -- date backup was supposed to occur on for time frame
-## Ex: current_date="2016-01-01"
-### missed_remote_backup ... "backup/mysqldump/weekly" "2016-01-01" --> 1
-### missed_remote_backup ... "backup/mysqldump/weekly" "2016-01-02" --> 0
-missed_remote_backup() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-	local required_backup_date="$(date -d \
-		"$(previous_scheduled_backup_date "$system_backup_freq")" +"%Y%m%d")"
-	local known_backup_date
-
-	known_backup_date=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
-		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-		-o StrictHostKeyChecking=no '
-		
-		# Check if directory has placeholder file because date will set to 
-		# current date if it receives a null value
-		if [[ "$(ls -A '$backup_dir'/placeholder)" ]] ; then
-			# Directory filled, check date of most recent file
-			known_backup_date="$(date -d "$(ls -lFt --full-time \
-				'$backup_dir/placeholder' | awk "FNR == 2 {print \$6}")" \
-				+"%Y%m%d")"
-		
-		else
-			# Directory is empty, set date to nothing manually
-			known_backup_date=0
-		fi
-
-		echo "$known_backup_date"
-	')
-
-	# If a backup has not occurred at the required time (required time greater
-	#     than last known backup time), then backup was missed
-	if (( "$required_backup_date" > "$known_backup_date" )) ; then
-		return 0
-	fi
-
-	return 1
 }
 
 # Checks existence of credentials for a backup host
@@ -1316,7 +1362,8 @@ rsync_host() {
 	# If scheduled time for remote backup ready or remote backup missed
 	if scheduled_backup_date_reached "$backup_schedule" \
 		|| missed_remote_backup "$domain" "$port" "$user" "$ssh_key" \
-			"$backup_dir"
+			"$backup_dir" "$(previous_scheduled_backup_date \
+			"$system_backup_freq")"
 		then
 
 		rsync_command "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
