@@ -334,6 +334,21 @@ yes_no_response() {
 	fi
 }
 
+# Detect "y" or "yes" response as affirmative answer in case-insensitive manner
+# param String $1
+## Ex: yes_response "yes" --> returns 0
+## Ex: yes_response "no" --> returns 1
+## Ex: yes_response "gobble de guk" --> returns 1
+yes_response() {
+	if [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = y ]] \
+		|| [[ $(echo "$1" | tr -s '[:upper:]' '[:lower:]') = yes ]] ; then
+
+		return 0
+	else
+		return 1
+	fi
+}
+
 # Sets the default value of remote_system_backup_only indicating whether only 
 #     remote backups are allowed or not
 # param Var (as string) $1 -- variable name passed as string
@@ -399,6 +414,206 @@ missed_remote_backup() {
 
 	return 1
 }
+
+# Checks existence of credentials for a backup host
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+remote_backup_requested() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	# Credentials not present, assuming no remote backup requested
+	if ! [[ -n "$domain" ]] || ! [[ -n "$port" ]] || ! [[ -n "$user" ]] || \
+		! [[ -n "$ssh_key" ]] || ! [[ -n "$backup_dir" ]] ; then
+
+		return 1
+	fi
+
+	return 0
+}
+
+# Checks SSH key for existance and unencrypted state
+# param String $1 -- "on-site" or "off-site"
+# param Var (as string) $1 -- host ssh key (no passphrase allowed)
+ssh_key_ok() {
+	local ssh_key="$1"
+
+	# SSH key isn't a real file
+	if ! [[ -f "$ssh_key" ]] ; then
+		echo "Remote Backup Error: the "$ssh_key" SSH key does not exist" \
+			>> "$log_file"
+
+		return 1
+
+	# SSH key is encrypted and can't be used
+	elif grep -q "ENCRYPTED" "$ssh_key" ; then
+		error_flag=1
+		email_body+=" - Remote backup: $ssh_key\n"
+
+		echo -n "Remote Backup Error: $ssh_key ssh key encrypted.  " \
+			>> "$log_file"
+		echo "Can't login to server." >> "$log_file"
+
+		return 1
+	fi
+
+	# ssh key ok
+	return 0
+}
+
+# Checks for ability to login to remote host
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+host_login_ok() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+
+	# Remote host unable to be logged into
+	if ! ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" -o \
+		IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no exit ; then
+
+		error_flag=1
+		email_body+=" - Remote backup to $domain\n"
+
+		echo -n "Remote Backup Error: host $domain unable to be " \
+			>> "$log_file"
+		echo "reached; check host login parameters and remote server" \
+			>> "$log_file"
+
+		return 1
+
+	fi
+
+	# host is ok
+	return 0
+}
+
+# Checks existence of credentials for a backup host
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param String $5 -- backup directory on remote host
+backup_dir_ok() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	local file_owner
+	local file_permissions
+
+	file_owner=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no '
+		
+		file_owner="$(ls -alF '$backup_dir' | awk "FNR == 2 {print \$3}")"
+		echo "$file_owner"
+	')
+
+	file_permissions=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no '
+
+		file_permissions="$(ls -alF '$backup_dir' | awk "FNR == 2 {print \$1}")"
+		echo "$file_permissions"
+	')
+
+	if ! [[ "$file_owner" == "$user" ]] ; then
+		error_flag=1
+		email_body+=" - Remote backup to $domain\n"
+
+		echo -n "Remote Backup Error: $backup_dir on host $domain not owned " \
+			>> "$log_file"
+		echo "by user listed in terminator.conf: $user" \
+			>> "$log_file"
+
+		return 1
+	fi
+
+	if ! [[ "$file_permissions" == drwx* ]] ; then
+		error_flag=1
+		email_body+=" - Remote backup to $domain\n"
+
+		echo -n "Remote Backup Error: $backup_dir on host $domain does not " \
+			>> "$log_file"
+		echo "have at least 700 permissions or is not a directory" \
+			>> "$log_file"
+
+		return 1
+	fi
+
+	return 0
+}
+
+# Checks the health of the remote backup host by simply checking above functions
+#     for success
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param Dir $5 -- directory storing backups to be curated
+remote_host_healthy() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+
+	if ! ssh_key_ok "$ssh_key" \
+		|| ! host_login_ok "$domain" "$port" "$user" "$ssh_key" \
+		|| ! backup_dir_ok "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
+		then
+
+		# something went wrong with the remote host, remote host not ready
+		return 1
+	fi
+
+	return 0
+}
+
+# Creates the remote backup directories from an array listing the desired 
+#     directories
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param Dir $5 -- parent directory to contain backups
+# param Array $6 -- array of backups directories
+## Ex: create_backup_dirs ("dir1" "dir2") --> ./dir1/ ./dir2/
+create_remote_backup_dirs() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local parent_dir="$5"
+	
+	shift; shift; shift; shift; shift
+	local db_backup_dirs=("$@")
+
+	ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no '
+
+		# Create directory structure
+		for dir in '"${db_backup_dirs[@]}"' ; do
+			if ! [[ -d '"$parent_dir/$dir"' ]] ; then
+				mkdir -p '"$parent_dir/$dir"'
+			fi
+		done
+	'
+}
+
 
 # --------------- #
 # Database Backup #
@@ -510,7 +725,6 @@ missed_local_backup() {
 	return 1
 }
 
-
 # Deletes oldest backup file in specified directory if more files are present 
 #     than the listed number
 # param Dir $1 -- directory storing backups to be curated
@@ -588,12 +802,14 @@ curate_remote_backups() {
 # param String $1 -- root user for db backup
 # param String $2 -- root user password for db backup
 # param Dir $3 -- directory storing daily backups
-# param File $3 -- name of backup file to store backup
+# param File $4 -- name of backup file to store backup
 local_daily_db_backup() {
 	local db_user="$1"
 	local db_pass="$2"
 	local destination_dir="$3"
 	local db_backup_file="$4"
+
+	create_backup_dirs "$local_host_backup_dir" "mysqldump/daily"
 
 	# run backup
 	mysqldump -u "$db_user" -p"$db_pass" --all-databases \
@@ -612,6 +828,136 @@ local_daily_db_backup() {
 	return 0
 }
 
+# Schedules a remote daily backup by performing a mysqldump and gzip over SSH, 
+#     errors out if no access
+# param String $1 -- root user for db backup
+# param String $2 -- root user password for db backup
+# param String $3 -- name of backup file to store backup
+remote_daily_db_backup() {
+	local db_user="$1"
+	local db_pass="$2"
+	local db_backup_file="$3"
+
+	# On site and off-site servers given and healthy
+	if remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
+		"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir" \
+	&& remote_host_healthy "$on_site_host_domain" "$on_site_host_port" \
+		"$on_site_host_user" "$on_site_host_ssh_key" \
+		"$on_site_host_backup_dir" \
+	&& remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
+		"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir" \
+	&& remote_host_healthy "$off_site_host_domain" "$off_site_host_port" \
+		"$off_site_host_user" "$off_site_host_ssh_key" \
+		"$off_site_host_backup_dir"
+
+		# create on-site backup server backup directories if necessary
+		create_remote_backup_dirs "$on_site_host_domain" "$on_site_host_port" \
+			"$on_site_host_user" "$on_site_host_ssh_key" \
+			"$on_site_host_backup_dir" "mysqldump/daily"
+
+		# create off-site backup server backup directories if necessary
+		create_remote_backup_dirs "$off_site_host_domain" "$off_site_host_port" \
+			"$off_site_host_user" "$off_site_host_ssh_key" \
+			"$off_site_host_backup_dir" "mysqldump/daily"
+
+		# backup to both servers simultaneously
+		mysqldump -u "$db_user" -p"$db_pass" --all-databases 2>> "$log_file" \
+			| gzip -c \
+			| tee ssh -q -F /dev/null "$on_site_host_user@$on_site_host_domain" -p "$on_site_host_port" \
+				-i "$on_site_host_ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+				-o StrictHostKeyChecking=no 'cat > '"$on_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz" \
+			| ssh -q -F /dev/null "$off_site_host_user@$off_site_host_domain" -p "$off_site_host_port" \
+				-i "$off_site_host_ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+				-o StrictHostKeyChecking=no 'cat > '"$off_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
+
+		# On-site backup server directory curation
+		curate_remote_backups "$on_site_host_domain" "$on_site_host_port" \
+			"$on_site_host_user" "$on_site_host_ssh_key" \
+			"$on_site_host_backup_dir/mysqldump/daily" "$daily_db_backup_rollover"
+
+		# Off-site backup server directory curation
+		curate_remote_backups "$off_site_host_domain" "$off_site_host_port" \
+			"$off_site_host_user" "$off_site_host_ssh_key" \
+			"$off_site_host_backup_dir/mysqldump/daily" "$daily_db_backup_rollover"
+
+	# on-site remote backup
+	elif remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
+		"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir" \
+	&& remote_host_healthy "$on_site_host_domain" "$on_site_host_port" \
+		"$on_site_host_user" "$on_site_host_ssh_key" \
+		"$on_site_host_backup_dir"
+	then
+
+		# Create on-site remote directories
+		create_remote_backup_dirs "$on_site_host_domain" "$on_site_host_port" \
+			"$on_site_host_user" "$on_site_host_ssh_key" \
+			"$on_site_host_backup_dir" "mysqldump/daily"
+
+		# backup to on-site server
+		mysqldump -u "$db_user" -p"$db_pass" --all-databases 2>> "$log_file" \
+			| gzip -c \
+			| ssh -q -F /dev/null "$on_site_host_user@$on_site_host_domain" -p "$on_site_host_port" \
+				-i "$on_site_host_ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+				-o StrictHostKeyChecking=no 'cat > '"$on_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
+
+		# On-site backup server directory curation
+		curate_remote_backups "$on_site_host_domain" "$on_site_host_port" \
+			"$on_site_host_user" "$on_site_host_ssh_key" \
+			"$on_site_host_backup_dir/mysqldump/daily" "$daily_db_backup_rollover"
+
+	# off-site remote backup
+	elif remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
+		"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir" \
+	&& remote_host_healthy "$off_site_host_domain" "$off_site_host_port" \
+		"$off_site_host_user" "$off_site_host_ssh_key" \
+		"$off_site_host_backup_dir"
+	then
+
+		# Create off-site remote directories
+		create_remote_backup_dirs "$on_site_host_domain" "$on_site_host_port" \
+			"$on_site_host_user" "$on_site_host_ssh_key" \
+			"$on_site_host_backup_dir" "mysqldump/daily"
+
+		# backup to off-site server
+		mysqldump -u "$db_user" -p"$db_pass" --all-databases 2>> "$log_file" \
+			| gzip -c \
+			| ssh -q -F /dev/null "$off_site_host_user@$off_site_host_domain" -p "$off_site_host_port" \
+				-i "$off_site_host_ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+				-o StrictHostKeyChecking=no 'cat > '"$off_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
+
+		# Off-site backup server directory curation
+		curate_remote_backups "$off_site_host_domain" "$off_site_host_port" \
+			"$off_site_host_user" "$off_site_host_ssh_key" \
+			"$off_site_host_backup_dir/mysqldump/daily" "$daily_db_backup_rollover"
+	fi
+
+	if grep -q "mysqldump: " "$log_file" ; then
+		return 1
+	fi
+
+	return 0
+}
+
+# Simply performs the daily backup as local or remote based on settings in
+#     terminator.conf
+#
+daily_db_backup() {
+	# File used for backup
+	db_backup_file="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
+
+	if yes_response "$remote_system_backup_only" ; then
+		remote_daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
+			"$db_backup_file"
+
+	else
+		local_daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
+			"$local_host_backup_dir/mysqldump/daily" "$db_backup_file"
+	fi
+
+	# return depending on whether the previous command was successful
+	return $?
+}
+
 # Schedules the weekly backup if current weekday is the same as weekday of the
 #     backup_start date in terminator.conf by copying backup file to specified
 #     directory
@@ -620,6 +966,8 @@ local_daily_db_backup() {
 local_weekly_db_backup() {
 	local destination_dir="$1"
 	local db_backup_file="$2"
+
+	create_backup_dirs "$local_host_backup_dir" "mysqldump/weekly"
 
 	# Need to backup if last one was missed or if it's the same day of the week
 	#     as program installation (backup_start)
@@ -643,6 +991,8 @@ local_monthly_db_backup() {
 	local destination_dir="$1"
 	local db_backup_file="$2"
 
+	create_backup_dirs "$local_host_backup_dir" "mysqldump/monthly"
+
 	# Need to backup if last one was missed or if it's the same day of the month
 	#     (or last day of the month, whichever comes first) as program 
 	#     installation (backup_start)
@@ -665,6 +1015,8 @@ local_monthly_db_backup() {
 local_yearly_db_backup() {
 	local destination_dir="$1"
 	local db_backup_file="$2"
+
+	create_backup_dirs "$local_host_backup_dir" "mysqldump/yearly"
 
 	# Need to backup if last one was missed or if it's the same day of the year
 	#     as program installation (backup_start)
@@ -717,15 +1069,6 @@ backup_db() {
 
 # Only attempt database backup if database credentials in terminator.conf
 if db_backup_requested ; then
-	# Database backup directory structure list
-	db_backup_dirs=(
-		"mysqldump/daily"
-		"mysqldump/weekly"
-		"mysqldump/monthly"
-		"mysqldump/yearly"
-	)
-	create_backup_dirs "$local_host_backup_dir" "${db_backup_dirs[@]}"
-
 	backup_db
 
 else
@@ -1164,148 +1507,6 @@ create_placeholder() {
 		# Change the date to current date for future reference
 		touch -d "$(date)" '"$backup_dir/"'placeholder
 	'
-}
-
-# Checks existence of credentials for a backup host
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-remote_backup_requested() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-
-	# Credentials not present, assuming no remote backup requested
-	if ! [[ -n "$domain" ]] || ! [[ -n "$port" ]] || ! [[ -n "$user" ]] || \
-		! [[ -n "$ssh_key" ]] || ! [[ -n "$backup_dir" ]] ; then
-
-		return 1
-	fi
-
-	return 0
-}
-
-# Checks SSH key for existance and unencrypted state
-# param String $1 -- "on-site" or "off-site"
-# param Var (as string) $1 -- host ssh key (no passphrase allowed)
-ssh_key_ok() {
-	local ssh_key="$1"
-
-	# SSH key isn't a real file
-	if ! [[ -f "$ssh_key" ]] ; then
-		echo "Remote Backup Error: the "$ssh_key" SSH key does not exist" \
-			>> "$log_file"
-
-		return 1
-
-	# SSH key is encrypted and can't be used
-	elif grep -q "ENCRYPTED" "$ssh_key" ; then
-		error_flag=1
-		email_body+=" - Remote backup: $ssh_key\n"
-
-		echo -n "Remote Backup Error: $ssh_key ssh key encrypted.  " \
-			>> "$log_file"
-		echo "Can't login to server." >> "$log_file"
-
-		return 1
-	fi
-
-	# ssh key ok
-	return 0
-}
-
-# Checks for ability to login to remote host
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-host_login_ok() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-
-	# Remote host unable to be logged into
-	if ! ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" -o \
-		IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-		-o StrictHostKeyChecking=no exit ; then
-
-		error_flag=1
-		email_body+=" - Remote backup to $domain\n"
-
-		echo -n "Remote Backup Error: host $domain unable to be " \
-			>> "$log_file"
-		echo "reached; check host login parameters and remote server" \
-			>> "$log_file"
-
-		return 1
-
-	fi
-
-	# host is ok
-	return 0
-}
-
-# Checks existence of credentials for a backup host
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-backup_dir_ok() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-
-	local file_owner
-	local file_permissions
-
-	file_owner=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
-		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no '
-		
-		file_owner="$(ls -alF '$backup_dir' | awk "FNR == 2 {print \$3}")"
-		echo "$file_owner"
-	')
-
-	file_permissions=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
-		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no '
-
-		file_permissions="$(ls -alF '$backup_dir' | awk "FNR == 2 {print \$1}")"
-		echo "$file_permissions"
-	')
-
-	if ! [[ "$file_owner" == "$user" ]] ; then
-		error_flag=1
-		email_body+=" - Remote backup to $domain\n"
-
-		echo -n "Remote Backup Error: $backup_dir on host $domain not owned " \
-			>> "$log_file"
-		echo "by user listed in terminator.conf: $user" \
-			>> "$log_file"
-
-		return 1
-	fi
-
-	if ! [[ "$file_permissions" == drwx* ]] ; then
-		error_flag=1
-		email_body+=" - Remote backup to $domain\n"
-
-		echo -n "Remote Backup Error: $backup_dir on host $domain does not " \
-			>> "$log_file"
-		echo "have at least 700 permissions or is not a directory" \
-			>> "$log_file"
-
-		return 1
-	fi
-
-	return 0
 }
 
 # Rsync command:  runs a general rsync command transferring backups to remote
