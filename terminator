@@ -982,6 +982,16 @@ local_weekly_db_backup() {
 	fi
 }
 
+# Schedules a remote weekly backup by simply copying files on the remote server
+#     from the daily backup when appropriate
+# param String $1 -- root user for db backup
+# param String $2 -- root user password for db backup
+# param String $3 -- name of backup file to store backup
+remote_weekly_db_backup() {
+	
+}
+
+
 # Schedules the monthly backup if current day of the month is the same as the
 #     day of the month as the backup_start date in terminator.conf by copying
 #     backup file to specified directory
