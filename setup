@@ -82,8 +82,8 @@ echo
 # Note that this requires an account with admin privileges but no need to be
 #     root when running file
 if ! which mail > /dev/null || ! which postfix > /dev/null ; then
-	sudo aptitude update
-	sudo aptitude install -y mailutils
+	sudo apt-get update
+	sudo apt-get install -y mailutils
 fi
 
 # Check for and install mutt (mail utility software)
@@ -91,8 +91,8 @@ fi
 # Note that this requires an account with admin privileges but no need to be
 #     root when running file
 if ! which mutt > /dev/null ; then
-	sudo aptitude update
-	sudo aptitude install -y mutt
+	sudo apt-get update
+	sudo apt-get install -y mutt
 fi
 
 
