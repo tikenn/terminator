@@ -79,20 +79,20 @@ email_errors() {
 
 # Update
 # echo "updating"
-echo "# aptitude update" >> "$log_file"
-aptitude update &>> "$log_file"
+echo "# apt-get update" >> "$log_file"
+apt-get update &>> "$log_file"
 echo >> "$log_file"
 
 # Upgrade
 # echo "upgrading"
-echo "# aptitude full-upgrade" >> "$log_file"
-aptitude -y full-upgrade &>> "$log_file"
+echo "# apt-get full-upgrade" >> "$log_file"
+apt-get -y full-upgrade &>> "$log_file"
 echo >> "$log_file"
 
 # Clean
 # echo "cleaning"
-echo "# aptitude clean" >> "$log_file"
-aptitude -y clean &>> "$log_file"
+echo "# apt-get clean" >> "$log_file"
+apt-get -y clean &>> "$log_file"
 echo >> "$log_file"
 
 # If errors with update and upgrade, set error_flag for email and add error to 
