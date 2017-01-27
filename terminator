@@ -86,7 +86,7 @@ echo >> "$log_file"
 # Upgrade
 # echo "upgrading"
 echo "# apt-get full-upgrade" >> "$log_file"
-apt-get -y full-upgrade &>> "$log_file"
+apt-get -y upgrade &>> "$log_file"
 echo >> "$log_file"
 
 # Clean
