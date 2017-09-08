@@ -77,30 +77,30 @@ email_errors() {
 # Automagic Updates #
 # ----------------- #
 
-# Update
-# echo "updating"
-echo "# apt-get update" >> "$log_file"
-apt-get update &>> "$log_file"
-echo >> "$log_file"
+# # Update
+# # echo "updating"
+# echo "# apt-get update" >> "$log_file"
+# apt-get update &>> "$log_file"
+# echo >> "$log_file"
 
-# Upgrade
-# echo "upgrading"
-echo "# apt-get full-upgrade" >> "$log_file"
-apt-get -y upgrade &>> "$log_file"
-echo >> "$log_file"
+# # Upgrade
+# # echo "upgrading"
+# echo "# apt-get full-upgrade" >> "$log_file"
+# apt-get -y upgrade &>> "$log_file"
+# echo >> "$log_file"
 
-# Clean
-# echo "cleaning"
-echo "# apt-get clean" >> "$log_file"
-apt-get -y clean &>> "$log_file"
-echo >> "$log_file"
+# # Clean
+# # echo "cleaning"
+# echo "# apt-get clean" >> "$log_file"
+# apt-get -y clean &>> "$log_file"
+# echo >> "$log_file"
 
-# If errors with update and upgrade, set error_flag for email and add error to 
-#     email body
-if grep -q "E: \|W: " "$log_file" ; then
-	error_flag=1
-	email_body+=" - System update and upgrade\n"
-fi
+# # If errors with update and upgrade, set error_flag for email and add error to 
+# #     email body
+# if grep -q "E: \|W: " "$log_file" ; then
+# 	error_flag=1
+# 	email_body+=" - System update and upgrade\n"
+# fi
 
 
 # ----------------- #
@@ -314,6 +314,21 @@ days_since_previous_backup() {
 # Generic Remote Backup Functions #
 # ------------------------------- #
 
+# SSH params combined for easier use
+on_site_host_login_params=(
+	"$on_site_host_domain"
+	"$on_site_host_port"
+	"$on_site_host_user"
+	"$on_site_host_ssh_key"
+)
+
+off_site_host_login_params=(
+	"$off_site_host_domain"
+	"$off_site_host_port"
+	"$off_site_host_user"
+	"$off_site_host_ssh_key"
+)
+
 # Detects "y", "n", "yes", and "no" user response in a case-insensitive manner
 # param String $1
 ## Ex: yes_response "y" --> returns 0
@@ -357,7 +372,7 @@ set_default_backup_style() {
 	local var_remote_backup="$1"
 	local default_value="$2"
 
-	if [[ -n ${!var_remote_backup} ]] && yes_no_response ; then
+	if [[ -n ${!var_remote_backup} ]] && yes_no_response ${!var_remote_backup} ; then
 		return 0
 	fi
 
@@ -632,11 +647,11 @@ set_default_rollover() {
 	local default_value="$2"
 
 	# User has set variable to number
-	if [[ -n ${!var_rollover} ]] && [[ ${!var_rollover} =~ "^[0-9]+$" ]]; then
+	if [[ -n ${!var_rollover} ]] && [[ ${!var_rollover} =~ ^[0-9]+$ ]]; then
 		return 0
 
 	# User has not set variable to number
-	elif [[ -n ${!var_rollover} ]] && ! [[ ${!var_rollover} =~ "^[0-9]+$" ]]
+	elif [[ -n ${!var_rollover} ]] && ! [[ ${!var_rollover} =~ ^[0-9]+$ ]]
 	then
 		echo -n "DB Backup Notice: " >> "$log_file"
 		echo -n "$var_rollover value not recognized as an integer; "\
@@ -773,25 +788,27 @@ curate_remote_backups() {
 		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 		-o StrictHostKeyChecking=no '
 
-		file_count="$(ls -1 '"$backup_dir"' | wc -l)"
+		file_count=$(ls -1 '"$backup_dir"' | wc -l)
 		files_removed=0
 
 		# Remove files until only the amount in rollover exist
-		while (('"$file_count"' > '"$backup_dir_rollover"')) ; do
+		while (( "$file_count" > '"$backup_dir_rollover"' )) ; do
 			# Find oldest file and remove it
 			oldest_file="$(ls -lFtr '"$backup_dir"' | awk "FNR == 2 {print \$9}")"
 			
-			rm -rf "$backup_dir/$oldest_file"
+			rm -rf '"$backup_dir"'"/$oldest_file"
 			
 			# Reset count
-			file_count="$(ls -1 "$backup_dir" | wc -l)"
+			file_count=$(ls -1 '"$backup_dir"' | wc -l)
 			(( files_removed++ ))
 		done
 
 		echo "$files_removed"
 	')
 
-	for (( i = 0; i < files_removed; i++)); do
+	echo "files removed in curation: $files_removed"
+
+	for (( i = 0; i < files_removed; i++ )) ; do
 		echo "DB Backup Info: removing old file in $backup_dir . . . " \
 			>> "$log_file"
 	done
@@ -814,7 +831,6 @@ local_daily_db_backup() {
 	# run backup
 	mysqldump -u "$db_user" -p"$db_pass" --all-databases \
 		1> "$db_backup_file" 2>> "$log_file"
-	echo "DB Backup Info: performed daily backup" >> "$log_file"
 
 	# fatal db backup error
 	if grep -q "mysqldump: " "$log_file" ; then
@@ -839,95 +855,95 @@ remote_daily_db_backup() {
 	local db_backup_file="$3"
 
 	# On site and off-site servers given and healthy
-	if remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
-		"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir" \
-	&& remote_host_healthy "$on_site_host_domain" "$on_site_host_port" \
-		"$on_site_host_user" "$on_site_host_ssh_key" \
-		"$on_site_host_backup_dir" \
-	&& remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
-		"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir" \
-	&& remote_host_healthy "$off_site_host_domain" "$off_site_host_port" \
-		"$off_site_host_user" "$off_site_host_ssh_key" \
-		"$off_site_host_backup_dir"
+	if remote_backup_requested ${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir" \
+		&& remote_host_healthy ${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir" \
+		&& remote_backup_requested ${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir" \
+		&& remote_host_healthy ${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir"
+		then
 
 		# create on-site backup server backup directories if necessary
-		create_remote_backup_dirs "$on_site_host_domain" "$on_site_host_port" \
-			"$on_site_host_user" "$on_site_host_ssh_key" \
+		create_remote_backup_dirs ${on_site_host_login_params[@]} \
 			"$on_site_host_backup_dir" "mysqldump/daily"
 
 		# create off-site backup server backup directories if necessary
-		create_remote_backup_dirs "$off_site_host_domain" "$off_site_host_port" \
-			"$off_site_host_user" "$off_site_host_ssh_key" \
+		create_remote_backup_dirs ${off_site_host_login_params[@]} \
 			"$off_site_host_backup_dir" "mysqldump/daily"
 
 		# backup to both servers simultaneously
 		mysqldump -u "$db_user" -p"$db_pass" --all-databases 2>> "$log_file" \
 			| gzip -c \
-			| tee ssh -q -F /dev/null "$on_site_host_user@$on_site_host_domain" -p "$on_site_host_port" \
-				-i "$on_site_host_ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-				-o StrictHostKeyChecking=no 'cat > '"$on_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz" \
-			| ssh -q -F /dev/null "$off_site_host_user@$off_site_host_domain" -p "$off_site_host_port" \
-				-i "$off_site_host_ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-				-o StrictHostKeyChecking=no 'cat > '"$off_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
+			| tee ssh -q -F /dev/null "$on_site_host_user@$on_site_host_domain" \
+				-p "$on_site_host_port" -i "$on_site_host_ssh_key" \
+				-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+				-o StrictHostKeyChecking=no 'cat > \
+				'"$on_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz" \
+			| ssh -q -F /dev/null "$off_site_host_user@$off_site_host_domain" \
+				-p "$off_site_host_port" -i "$off_site_host_ssh_key" \
+				-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+				-o StrictHostKeyChecking=no 'cat > \
+				'"$off_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
 
 		# On-site backup server directory curation
-		curate_remote_backups "$on_site_host_domain" "$on_site_host_port" \
-			"$on_site_host_user" "$on_site_host_ssh_key" \
+		curate_remote_backups ${on_site_host_login_params[@]} \
 			"$on_site_host_backup_dir/mysqldump/daily" "$daily_db_backup_rollover"
 
 		# Off-site backup server directory curation
-		curate_remote_backups "$off_site_host_domain" "$off_site_host_port" \
-			"$off_site_host_user" "$off_site_host_ssh_key" \
+		curate_remote_backups ${off_site_host_login_params[@]}
 			"$off_site_host_backup_dir/mysqldump/daily" "$daily_db_backup_rollover"
 
 	# on-site remote backup
-	elif remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
-		"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir" \
-	&& remote_host_healthy "$on_site_host_domain" "$on_site_host_port" \
-		"$on_site_host_user" "$on_site_host_ssh_key" \
-		"$on_site_host_backup_dir"
-	then
+	elif remote_backup_requested ${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir" \
+		&& remote_host_healthy ${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir"
+		then
 
 		# Create on-site remote directories
-		create_remote_backup_dirs "$on_site_host_domain" "$on_site_host_port" \
-			"$on_site_host_user" "$on_site_host_ssh_key" \
+		echo "create remote dirs"
+		create_remote_backup_dirs ${on_site_host_login_params[@]} \
 			"$on_site_host_backup_dir" "mysqldump/daily"
 
+		echo "performing backup . . ."
 		# backup to on-site server
 		mysqldump -u "$db_user" -p"$db_pass" --all-databases 2>> "$log_file" \
 			| gzip -c \
-			| ssh -q -F /dev/null "$on_site_host_user@$on_site_host_domain" -p "$on_site_host_port" \
-				-i "$on_site_host_ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-				-o StrictHostKeyChecking=no 'cat > '"$on_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
+			| ssh -q -F /dev/null "$on_site_host_user@$on_site_host_domain" \
+				-p "$on_site_host_port" -i "$on_site_host_ssh_key" \
+				-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+				-o StrictHostKeyChecking=no 'cat > \
+				'"$on_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
 
+		echo "curate backups"
 		# On-site backup server directory curation
-		curate_remote_backups "$on_site_host_domain" "$on_site_host_port" \
-			"$on_site_host_user" "$on_site_host_ssh_key" \
+		curate_remote_backups ${on_site_host_login_params[@]} \
 			"$on_site_host_backup_dir/mysqldump/daily" "$daily_db_backup_rollover"
 
 	# off-site remote backup
-	elif remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
-		"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir" \
-	&& remote_host_healthy "$off_site_host_domain" "$off_site_host_port" \
-		"$off_site_host_user" "$off_site_host_ssh_key" \
-		"$off_site_host_backup_dir"
-	then
+	elif remote_backup_requested ${off_site_host_login_params[@]} \
+			"$on_site_host_backup_dir" \
+		&& remote_host_healthy ${off_site_host_login_params[@]} \
+			"$on_site_host_backup_dir"
+		then
 
 		# Create off-site remote directories
-		create_remote_backup_dirs "$on_site_host_domain" "$on_site_host_port" \
-			"$on_site_host_user" "$on_site_host_ssh_key" \
+		create_remote_backup_dirs ${off_site_host_login_params[@]} \
 			"$on_site_host_backup_dir" "mysqldump/daily"
 
 		# backup to off-site server
 		mysqldump -u "$db_user" -p"$db_pass" --all-databases 2>> "$log_file" \
 			| gzip -c \
-			| ssh -q -F /dev/null "$off_site_host_user@$off_site_host_domain" -p "$off_site_host_port" \
-				-i "$off_site_host_ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-				-o StrictHostKeyChecking=no 'cat > '"$off_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
+			| ssh -q -F /dev/null "$off_site_host_user@$off_site_host_domain" \
+				-p "$off_site_host_port" -i "$off_site_host_ssh_key" \
+				-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+				-o StrictHostKeyChecking=no 'cat > \
+				'"$off_site_host_backup_dir/mysqldump/daily/$db_backup_file.gz"
 
 		# Off-site backup server directory curation
-		curate_remote_backups "$off_site_host_domain" "$off_site_host_port" \
-			"$off_site_host_user" "$off_site_host_ssh_key" \
+		curate_remote_backups ${off_site_host_login_params[@]} \
 			"$off_site_host_backup_dir/mysqldump/daily" "$daily_db_backup_rollover"
 	fi
 
@@ -950,13 +966,25 @@ daily_db_backup() {
 			"$db_backup_file"
 
 	else
+		echo "$local_host_backup_dir"
 		local_daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
 			"$local_host_backup_dir/mysqldump/daily" "$db_backup_file"
 	fi
 
+	status="$?"
+
+	if (( "$status" == 0 )) ; then
+		echo "DB Backup Info: performed daily backup" >> "$log_file"
+	else
+		echo "DB Backup Fatal Error: daily backup failed" >> "$log_file"
+	fi
+
 	# return depending on whether the previous command was successful
-	return $?
+	return "$status"
 }
+
+daily_db_backup
+echo "daily db backup return: $?"
 
 # Schedules the weekly backup if current weekday is the same as weekday of the
 #     backup_start date in terminator.conf by copying backup file to specified
@@ -987,9 +1015,9 @@ local_weekly_db_backup() {
 # param String $1 -- root user for db backup
 # param String $2 -- root user password for db backup
 # param String $3 -- name of backup file to store backup
-remote_weekly_db_backup() {
+# remote_weekly_db_backup() {
 	
-}
+# }
 
 
 # Schedules the monthly backup if current day of the month is the same as the
@@ -1078,13 +1106,13 @@ backup_db() {
 }
 
 # Only attempt database backup if database credentials in terminator.conf
-if db_backup_requested ; then
-	backup_db
+# if db_backup_requested ; then
+# 	backup_db
 
-else
-	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
-		>> "$log_file"
-fi
+# else
+# 	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
+# 		>> "$log_file"
+# fi
 
 # End database section of log file
 echo >> "$log_file"
@@ -1634,7 +1662,7 @@ perform_rsync() {
 
 # Only perform an rsync if local backup is allowed
 # If local backup is not allowed the systems above will take care of the remote part as well
-(( "$remote_system_backup_only" == "no" )) && perform_rsync
+[[ "$remote_system_backup_only" = "no" ]] && perform_rsync
 
 # Email if any errors in the program
 email_errors "$email_body" "$error_flag"
