@@ -404,6 +404,9 @@ missed_remote_backup() {
 	local required_backup_date="$(date -d "$6" +"%Y%m%d")"
 	local known_backup_date
 
+	echo "missed_remote_backup port: $port"
+	echo
+
 	known_backup_date=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
 		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 		-o StrictHostKeyChecking=no '
@@ -655,6 +658,8 @@ create_remote_backup_dirs() {
 	shift; shift; shift; shift; shift
 	local db_backup_dirs=("$@")
 
+	echo "remote backup dirs in func: ${db_backup_dirs[@]}"
+
 	ssh -q -F /dev/null "$user@$domain" -p "$port" \
 		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no '
 
@@ -737,6 +742,8 @@ create_local_backup_dirs() {
 	shift
 	local db_backup_dirs=("$@")
 
+	echo "local db backup dirs in func: ${db_backup_dirs[@]}"
+
 	# Create directory structure
 	for dir in "${db_backup_dirs[@]}" ; do
 		if ! [[ -d "$parent_dir/$dir" ]] ; then
@@ -749,9 +756,12 @@ create_local_backup_dirs() {
 # param Dir $@ -- array of backup directories to create
 create_backup_dirs() {
 	local db_backup_dirs=("$@")
+	echo "db backup dirs: ${db_backup_dirs[@]}"
 
 	if ! yes_response "$remote_system_backup_only" ; then
-		create_local_backup_dirs "$local_host_backup_dir" "$db_backup_dirs"
+		echo "creating local backup dirs . . ."
+		echo
+		create_local_backup_dirs "$local_host_backup_dir" ${db_backup_dirs[@]}
 	fi
 
 	# on-site remote backup dirs
@@ -759,13 +769,13 @@ create_backup_dirs() {
 		echo "creating remote backup dirs . . ."
 		echo
 		create_remote_backup_dirs ${on_site_host_login_params[@]} \
-			"$on_site_host_backup_dir" "$db_backup_dirs"
+			"$on_site_host_backup_dir" ${db_backup_dirs[@]}
 	fi
 
 	# off-site remote backup dirs
 	if yes_response "$off_site_host_ready" ; then
 		create_remote_backup_dirs ${off_site_host_login_params[@]} \
-			"$off_site_host_backup_dir" "$db_backup_dirs"
+			"$off_site_host_backup_dir" ${db_backup_dirs[@]}
 	fi
 }
 
@@ -913,13 +923,14 @@ curate_backups() {
 mysql_command() {
 	local db_user="$1"
 	local db_pass="$2"
-	local db_backup_file="$3"
+	local db_backup_dir="$3"
+	local db_backup_file="$4"
 	local backup_command="mysqldump -u "$db_user" -p"$db_pass" --all-databases \
 		2>> "$log_file" | gzip -c | tee "
 
 	# local backup
 	if ! yes_response "$remote_system_backup_only" ; then
-		backup_command+="> $local_host_backup_dir/mysqldump/daily/$db_backup_file "
+		backup_command+="> $local_host_backup_dir/$db_backup_dir/$db_backup_file "
 	fi
 
 	# on-site remote backup
@@ -930,7 +941,7 @@ mysql_command() {
 			-p $on_site_host_port -i $on_site_host_ssh_key \
 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 			-o StrictHostKeyChecking=no 'cat > \
-			'$on_site_host_backup_dir/mysqldump/daily/$db_backup_file) "
+			'$on_site_host_backup_dir/$db_backup_dir/$db_backup_file) "
 	fi
 
 	# off-site remote backup
@@ -941,7 +952,7 @@ mysql_command() {
 			-p $off_site_host_port -i $off_site_host_ssh_key \
 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 			-o StrictHostKeyChecking=no 'cat > \
-			'$off_site_host_backup_dir/mysqldump/daily/$db_backup_file) "
+			'$off_site_host_backup_dir/$db_backup_dir/$db_backup_file) "
 
 	fi
 
@@ -961,7 +972,7 @@ local_db_snapshot() {
 	local previous_backup_date="$3"
 	local time_for_backup="$4"
 
-	if missed_local_backup "$destination_dir" "$previous_backup_date"
+	if missed_local_backup "$destination_dir" "$previous_backup_date" \
 		|| [[ "$time_for_backup" = "0" ]]
 	then
 
@@ -1000,7 +1011,7 @@ remote_db_snapshot() {
 	local time_for_backup="$8"
 
 	if missed_remote_backup ${remote_login_params[@]} "$destination_dir" \
-		"$previous_backup_date"
+		"$previous_backup_date" \
 		|| [[ "$time_for_backup" = "0" ]]
 	then
 
@@ -1019,31 +1030,44 @@ remote_db_snapshot() {
 # function that determines which db_snapshots should be run based on what is in 
 #     the configuration file
 # param String $1 -- place where the snapshot will be copied to
-# param String $2 -- original file of database backup to perform the snapshot on
-# param String $3 -- most recent backup in chosen directory
-# param Boolean $4 -- indicates whether it is time for snapshot to be run
+# param String $2 -- relative db backup directory (mysqldump/daily)
+# param String $3 -- original file of database backup to perform the snapshot on
+# param String $4 -- most recent backup in chosen directory
+# param Boolean $5 -- indicates whether it is time for snapshot to be run
 db_snapshot() {
 	local destination_dir="$1" # relative path
-	local db_backup_file="$2" # relative path
-	local previous_backup_date="$3"
-	local time_for_backup="$4"
+	local db_backup_dir="$2" 
+	local db_backup_file="$3" # relative path
+	local previous_backup_date="$4"
+	local time_for_backup="$5"
 
 	if ! yes_response "$remote_system_backup_only" ; then
-		local_db_snapshot "$destination_dir" "$db_backup_file" 
-			"$previous_backup_date" "$time_for_backup"
+		local_db_snapshot \
+			"$local_host_backup_dir/$destination_dir" \
+			"$local_host_backup_dir/$db_backup_dir/$db_backup_file" \
+			"$previous_backup_date" \
+			"$time_for_backup"
 	fi
 
 	# on-site remote backup dirs
 	if yes_response "$on_site_host_ready" ; then
-		remote_db_snapshot ${on_site_host_login_params} "$destination_dir" \
-			"$db_backup_file" "$previous_backup_date" "$time_for_backup"
+		remote_db_snapshot \
+			${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir/$destination_dir" \
+			"$on_site_host_backup_dir/$db_backup_dir/$db_backup_file" \
+			"$previous_backup_date" \
+			"$time_for_backup"
 
 	fi
 
 	# off-site remote backup dirs
 	if yes_response "$off_site_host_ready" ; then
-		remote_db_snapshot ${off_site_host_login_params} "$destination_dir" \
-			"$db_backup_file" "$previous_backup_date" "$time_for_backup"
+		remote_db_snapshot \
+			${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir/$destination_dir" \
+			"$off_site_host_backup_dir/$db_backup_dir/$db_backup_file" \
+			"$previous_backup_date" \
+			"$time_for_backup"
 	fi
 }
 
@@ -1220,17 +1244,15 @@ db_snapshot() {
 # }
 
 # Performs daily db backup and maintenance of daily backups
+# param File $1 -- file to store the daily backup in
 daily_db_backup() {
-	local db_backup_dir="mysqldump/daily"
-	local db_backup_file="$HOSTNAME.mysqldump.$(date +"%F_%T").sql.gz"
+	local db_backup_dir="$1"
+	local db_backup_file="$2"
 	local backup_status=""
 
-	create_backup_dirs "$db_backup_dir" # move this to the main function...
-
-	mysql_command "$local_host_db_user" "$local_host_db_pass" "$db_backup_file"
+	mysql_command "$local_host_db_user" "$local_host_db_pass" \
+		"$db_backup_dir" "$db_backup_file"
 	backup_status="$?"
-
-	curate_backups "$db_backup_dir" "$daily_db_backup_rollover" # also should be moved to main function...
 
 	return "$backup_status"
 }
@@ -1321,45 +1343,45 @@ local_yearly_db_backup() {
 	fi
 }
 
-# Backs up database using scheduling functions, does not accept params
-backup_db() {
-	# File used for backup
-	db_backup_file="$local_host_backup_dir/mysqldump/daily/"
-	db_backup_file+="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
+# # Backs up database using scheduling functions, does not accept params
+# backup_db() {
+# 	# File used for backup
+# 	db_backup_file="$local_host_backup_dir/mysqldump/daily/"
+# 	db_backup_file+="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
 
-	# Perform initial daily backup, and, if successful, perform other timed
-	#     backups
-	if local_daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
-		"$local_host_backup_dir/mysqldump/daily" "$db_backup_file" ; then
+# 	# Perform initial daily backup, and, if successful, perform other timed
+# 	#     backups
+# 	if local_daily_db_backup "$local_host_db_user" "$local_host_db_pass" \
+# 		"$local_host_backup_dir/mysqldump/daily" "$db_backup_file" ; then
 
-		# Perform timed backups if appropriate
-		local_weekly_db_backup "$local_host_backup_dir/mysqldump/weekly" \
-			"$db_backup_file.gz"
-		local_monthly_db_backup "$local_host_backup_dir/mysqldump/monthly" \
-			"$db_backup_file.gz"
-		local_yearly_db_backup "$local_host_backup_dir/mysqldump/yearly" \
-			"$db_backup_file.gz"
+# 		# Perform timed backups if appropriate
+# 		local_weekly_db_backup "$local_host_backup_dir/mysqldump/weekly" \
+# 			"$db_backup_file.gz"
+# 		local_monthly_db_backup "$local_host_backup_dir/mysqldump/monthly" \
+# 			"$db_backup_file.gz"
+# 		local_yearly_db_backup "$local_host_backup_dir/mysqldump/yearly" \
+# 			"$db_backup_file.gz"
 	
-	else
-		# email flags and message
-		error_flag=1
-		email_body+=" - Database backup\n"
+# 	else
+# 		# email flags and message
+# 		error_flag=1
+# 		email_body+=" - Database backup\n"
 		
-		# remove empty db file
-		rm "$db_backup_file"
+# 		# remove empty db file
+# 		rm "$db_backup_file"
 
-		# log fatal error
-		echo "DB Backup Fatal Error: terminated DB backup" >> "$log_file"
+# 		# log fatal error
+# 		echo "DB Backup Fatal Error: terminated DB backup" >> "$log_file"
 
-		return 1
-	fi
+# 		return 1
+# 	fi
 
-	return 0
-}
+# 	return 0
+# }
 
 backup_db() {
 	# File used for backup
-	local db_backup_file="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
+	local db_backup_file="$HOSTNAME.mysqldump.$(date +"%F_%T").sql.gz"
 	local snapshot=""
 	local backup_dirs=(
 		"mysqldump/daily"
@@ -1369,13 +1391,17 @@ backup_db() {
 	)
 	local rollover=""
 
+	echo "backup_db func creating backup dirs"
 	create_backup_dirs ${backup_dirs[@]}
 
-	if daily_db_backup ; then
+	if daily_db_backup ${backup_dirs[0]} "$db_backup_file" ; then
 		for (( i = 1; i < ${#backup_dirs[@]}; i++ )) ; do
 			snapshot=${backup_dirs[$i]##*/}
 
-			db_snapshot ${backup_dirs[$i]} "$db_backup_file" \
+			db_snapshot \
+				${backup_dirs[$i]} \
+				${backup_dirs[0]} \
+				"$db_backup_file" \
 				"$(eval "previous_""$snapshot""_backup_date")" \
 				"$(eval "$snapshot""_backup_date_reached")"
 
@@ -1401,13 +1427,13 @@ backup_db() {
 }
 
 # Only attempt database backup if database credentials in terminator.conf
-# if db_backup_requested ; then
-# 	backup_db
+if db_backup_requested ; then
+	backup_db
 
-# else
-# 	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
-# 		>> "$log_file"
-# fi
+else
+	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
+		>> "$log_file"
+fi
 
 # End database section of log file
 echo >> "$log_file"
