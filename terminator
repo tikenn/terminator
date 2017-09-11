@@ -881,7 +881,7 @@ curate_remote_backups() {
 # param Dir $1 -- relative path of backup directory to curate, full path in func
 # param Int $2 -- number of backups to keep in backup dir
 curate_backups() {
-	local backup_dir="$1"
+	local backup_dir="$1" # relative path (mysqldump/...)
 	local backup_dir_rollover="$2"
 
 	if ! yes_response "$remote_system_backup_only" ; then
@@ -1016,6 +1016,12 @@ remote_db_snapshot() {
 	fi
 }
 
+# function that determines which db_snapshots should be run based on what is in 
+#     the configuration file
+# param String $1 -- place where the snapshot will be copied to
+# param String $2 -- original file of database backup to perform the snapshot on
+# param String $3 -- most recent backup in chosen directory
+# param Boolean $4 -- indicates whether it is time for snapshot to be run
 db_snapshot() {
 	local destination_dir="$1" # relative path
 	local db_backup_file="$2" # relative path
@@ -1023,17 +1029,21 @@ db_snapshot() {
 	local time_for_backup="$4"
 
 	if ! yes_response "$remote_system_backup_only" ; then
-
+		local_db_snapshot "$destination_dir" "$db_backup_file" 
+			"$previous_backup_date" "$time_for_backup"
 	fi
 
 	# on-site remote backup dirs
 	if yes_response "$on_site_host_ready" ; then
+		remote_db_snapshot ${on_site_host_login_params} "$destination_dir" \
+			"$db_backup_file" "$previous_backup_date" "$time_for_backup"
 
 	fi
 
 	# off-site remote backup dirs
 	if yes_response "$off_site_host_ready" ; then
-
+		remote_db_snapshot ${off_site_host_login_params} "$destination_dir" \
+			"$db_backup_file" "$previous_backup_date" "$time_for_backup"
 	fi
 }
 
@@ -1330,6 +1340,49 @@ backup_db() {
 		local_yearly_db_backup "$local_host_backup_dir/mysqldump/yearly" \
 			"$db_backup_file.gz"
 	
+	else
+		# email flags and message
+		error_flag=1
+		email_body+=" - Database backup\n"
+		
+		# remove empty db file
+		rm "$db_backup_file"
+
+		# log fatal error
+		echo "DB Backup Fatal Error: terminated DB backup" >> "$log_file"
+
+		return 1
+	fi
+
+	return 0
+}
+
+backup_db() {
+	# File used for backup
+	local db_backup_file="$HOSTNAME.mysqldump.$(date +"%F_%T").sql"
+	local snapshot=""
+	local backup_dirs=(
+		"mysqldump/daily"
+		"mysqldump/weekly"
+		"mysqldump/monthly"
+		"mysqldump/yearly"
+	)
+	local rollover=""
+
+	create_backup_dirs ${backup_dirs[@]}
+
+	if daily_db_backup ; then
+		for (( i = 1; i < ${#backup_dirs[@]}; i++ )) ; do
+			snapshot=${backup_dirs[$i]##*/}
+
+			db_snapshot ${backup_dirs[$i]} "$db_backup_file" \
+				"$(eval "previous_""$snapshot""_backup_date")" \
+				"$(eval "$snapshot""_backup_date_reached")"
+
+			rollover="$snapshot""_db_backup_rollover"
+			curate_backups ${backup_dirs[$i]} ${!rollover}
+		done
+
 	else
 		# email flags and message
 		error_flag=1
