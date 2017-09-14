@@ -1184,8 +1184,8 @@ backup_db() {
 				"${backup_dirs[$i]}" \
 				"${backup_dirs[0]}" \
 				"$db_backup_file" \
-				"$(eval "previous_""$snapshot""_backup_date")" \
-				"$(eval "$snapshot""_backup_date_reached"; echo "$?")"
+				"$(eval "previous_scheduled_backup_date $snapshot")" \
+				"$(eval "scheduled_backup_date_reached $snapshot"; echo "$?")"
 
 			rollover="$snapshot""_db_backup_rollover"
 			curate_backups "${backup_dirs[$i]}" ${!rollover}
