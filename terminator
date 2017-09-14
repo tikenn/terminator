@@ -1250,7 +1250,8 @@ set_default_dump_schedule() {
 	
 		# Notify user that default value being set for remote backup schedule
 		echo -n "System Backup Notice: " >> "$log_file"
-		echo -n "$dump_schedule value not recognized; " >> "$log_file"
+		echo -n "Dump schedule value ($dump_schedule) not recognized; " \
+			>> "$log_file"
 		echo "setting to default of $default_value" >> "$log_file"
 	fi
 
@@ -1314,7 +1315,9 @@ reset_dumps() {
 	fi
 }
 
-# Resets backup cycle for next round of differential backups
+# Resets system backup directory to cycle 0 or cycle 1 by deleting everything
+#     after the respective cycle.  Preps for restart of differential backup 
+#     cycle for next round of differential backups (this function needs to be renamed to something like backup_directory_restart or backup_directory_cycle_restart)
 # param Int -- backup level
 backup_cycle_reset() {
 	local backup_level="$1"
