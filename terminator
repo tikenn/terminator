@@ -1208,14 +1208,14 @@ backup_db() {
 	return 0
 }
 
-# Only attempt database backup if database credentials in terminator.conf
-if db_backup_requested ; then
-	backup_db
+# # Only attempt database backup if database credentials in terminator.conf
+# if db_backup_requested ; then
+# 	backup_db
 
-else
-	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
-		>> "$log_file"
-fi
+# else
+# 	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
+# 		>> "$log_file"
+# fi
 
 # End database section of log file
 echo >> "$log_file"
@@ -1335,7 +1335,7 @@ backup_cycle_reset() {
 # Determines if a level 0 backup has been missed
 # param Dir $1 -- backup directory
 # param File $2 -- name of file that is supposed to contain level 0 backup
-missed_level0_backup() {
+missed_local_level0_backup() {
 	# Backup directory
 	local backup_dir="$1"
 
@@ -1367,9 +1367,166 @@ missed_level0_backup() {
 	fi
 
 	# level 0 backup missed
-	echo "System Backup Notice: previous level 0 backup missed." >> "$log_file"
+	echo "System Backup Notice: previous local level 0 backup missed." \
+		>> "$log_file"
 	return 0
 }
+
+# Determines whether the level0 backup has been missed on a remote server
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param Dir $5 -- backup directory on remote host
+# param File $6 -- name of the file containing level 0 backup
+missed_remote_level0_backup() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5"
+	local level0_backup_files="$backup_dir/"${6}
+	local expected_previous_backup_date=$(date -d \
+		"$(previous_scheduled_backup_date "$system_backup_freq")" +"%Y%m%d")
+
+	local last_known_backup_date=$(ssh -q -F /dev/null "$user@$domain" \
+		-p "$port" -i "$ssh_key" -o IdentitiesOnly=yes \
+		-o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no '
+		
+		local known_backup_date
+
+		if ls -A '${level0_backup_files}' &> /dev/null ; then
+			local first_level0_backup_file="$(ls '${level0_backup_files}' \
+				| awk "FNR == 1 {print $6}")"
+
+				last_known_backup_date="$(date -d "$(ls -lFt --full-time \
+					"$first_level0_backup_file" \
+					| awk "FNR == 1 {print $6}")" +"%Y%m%d")"
+
+		else
+			known_backup_date=0
+		fi
+
+		echo "$known_backup_date"
+	')
+
+	if (( "$expected_previous_backup_date" > "$last_known_backup_date" ))
+	then
+		return 0
+	fi
+
+	return 1
+}
+
+# creates a temporary ssh config file for scp option -3
+# param File $1 -- location and name of file to create (full path)
+# param host1_login_params
+# param host2_login_params
+create_ssh_config_file() {
+	local ssh_config_file="$1"
+	local domain="$2"
+	local port="$3"
+	local user="$4"
+	local ssh_key="$5"
+	local domain2="$6"
+	local port2="$7"
+	local user2="$8"
+	local ssh_key2="$9"
+
+	touch "$ssh_config_file"
+	echo "Host host1" >> "$ssh_config_file"
+	echo -e "\tHostName $domain" >> "$ssh_config_file"
+	echo -e "\tUser $user" >> "$ssh_config_file"
+	echo -e "\tPort $port" >> "$ssh_config_file"
+	echo -e "\tIdentityFile $ssh_key" >> "$ssh_config_file"
+	echo >> "$ssh_config_file"
+
+	echo "Host host2" >> "$ssh_config_file"
+	echo -e "\tHostName $domain2" >> "$ssh_config_file"
+	echo -e "\tUser $user2" >> "$ssh_config_file"
+	echo -e "\tPort $port2" >> "$ssh_config_file"
+	echo -e "\tIdentityFile $ssh_key2" >> "$ssh_config_file"
+	echo >> "$ssh_config_file"
+
+	echo "Host *" >> "$ssh_config_file"
+	echo -e "\tIdentitiesOnly yes" >> "$ssh_config_file"
+	echo -e "\tStrictHostKeyChecking no" >> "$ssh_config_file"
+}
+
+create_ssh_config_file "test_config" ${on_site_host_login_params[@]} ${off_site_host_login_params[@]}
+
+# deletes the config file that was used
+# param File $1 -- the file containing the ssh config to delete
+delete_ssh_config_file() {
+	local ssh_config_file="$1"
+
+	rm "$ssh_config_file"
+}
+
+# Copies a missed level 0 backup from a host that has it to a host that doesn't
+# param Array $1 -$4? -- Host to copy from
+# param Array $5 - 8? -- Host to copy to
+# param Files $9 -- set of level0 backup files
+# param Dir $10 -- location to copy level0 backup to
+copy_level0_to_missed_host() {
+	local domain
+	local port
+	local user
+	local ssh_key
+	local domain2
+	local port2
+	local user2
+	local ssh_key2
+	local level0_backup # full path and file pattern of level0 backup files (level0.tar.gz*)
+	local backup_location # full path
+
+	if [[ "$1" = "localhost" ]] ; then
+		domain="$2"
+		port="$3"
+		user="$4"
+		ssh_key="$5"
+		level0_backup=${6}
+		backup_location="$7"
+
+		scp -P "$port" -i "$ssh_key" -o IdentitiesOnly=no \
+			-o StrictHostKeyChecking=no \
+			${level0_backup} \
+			"$user@$domain:$backup_location"
+
+	elif [[ "$5" = "localhost" ]] ; then
+		domain="$1"
+		port="$2"
+		user="$3"
+		ssh_key="$4"
+		level0_backup=${6}
+		backup_location="$7"
+
+		scp -P "$port" -i "$ssh_key" -o IdentitiesOnly=no \
+			-o StrictHostKeyChecking=no \
+			"$user@$domain:"${level0_backup} \
+			"$backup_location"
+
+	else
+		domain="$1"
+		port="$2"
+		user="$3"
+		ssh_key="$4"
+		domain2="$5"
+		port2="$6"
+		user2="$7"
+		ssh_key2="$8"
+		level0_backup=${9}
+		backup_location="${10}"
+
+		ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" \
+			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+			'scp -P '$port2' -i'
+
+
+	fi
+}
+
 
 # Creates and names appropriate snar file based on backup_level and previous 
 #     one present
@@ -1455,8 +1612,8 @@ backup_level_rerun() {
 # Calculates the remaining disk space available for system backup
 # param Dir $1 -- directory for local system backups
 # return Int -- remaining disk space
-remaining_disk_space() {
-	local systemdump_dir="$1"
+remaining_local_disk_space() {
+	local systemdump_dir="$1" # full path
 
 	# Disk space remaining in partition containing systemdump_dir
 	# Note: df returns disk space in kilobytes, converting to bytes for
@@ -1468,6 +1625,133 @@ remaining_disk_space() {
 	echo "$remaining_disk_space"
 }
 
+# checks for enough local disk space to store backup
+# param Dir $1 -- The directory to store the local backup
+# param Int $2 -- The projected size of the backup
+remaining_local_disk_space_ok() {
+	local systemdump_dir="$1"
+	local projected_backup_size="$2"
+	
+	local remaining_disk_space="$(remaining_local_disk_space "$systemdump_dir")"
+
+	if (( "$projected_backup_size" > "$remaining_disk_space" )) ; then
+		echo -n "System Backup Error: not enought disk space remaining for " \
+			>> "$log_file"
+		echo -n "local backup.  " >> "$log_file"
+
+		echo -n "Remaining: $(("$remaining_disk_space" / 1000000000)) GB; " \
+			>> "$log_file"
+		echo -n "Backup: $(("$projected_backup_size" / 1000000000)) GB. " \
+			>> "$log_file"
+		echo "Terminating local backup . . ." >> "$log_file"
+
+		error_flag=1
+		email_body+=" - System backup\n"
+
+		return 1
+	fi
+	return 0
+}
+
+# Calculates the remaining disk space available for system backup on remote
+#     system
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param Dir $5 -- directory for local system backups
+# return Int -- remaining disk space
+remaining_remote_disk_space() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local systemdump_dir="$5" # full path
+
+	# Disk space remaining in partition containing systemdump_dir
+	# Note: df returns disk space in kilobytes, converting to bytes for
+	#     comparison
+	local remaining_disk_space=$(ssh -q -F /dev/null "$user@$domain" \
+		-p "$port" -i "$ssh_key" -o IdentitiesOnly=yes 
+		-o StrictHostKeyChecking=no '
+		
+		echo $(( $(df '"$systemdump_dir"' \
+			| awk "FNR == 2 {$print $4}") * 1000 ))
+	')
+
+	# return
+	echo "$remaining_disk_space"
+}
+
+# checks for enough remote disk space to store backup
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param Dir $5 -- The directory to store the local backup
+# param Int $6 -- The projected size of the backup
+remaining_remote_disk_space_ok() {
+	local login_params=(
+		"$1"
+		"$2"
+		"$3"
+		"$4"
+	)
+	local systemdump_dir="$5"
+	local projected_backup_size="$6"
+	local remaining_disk_space="$(remaining_remote_disk_space \
+		${login_params} "$systemdump_dir")"
+
+	if (( "$projected_backup_size" > "$remaining_disk_space" )) ; then
+		echo -n "System Backup Error: not enought disk space remaining for " \
+			>> "$log_file"
+		echo -n "remote host (${login_params[0]}) backup.  " >> "$log_file"
+
+		echo -n "Remaining: $(("$remaining_disk_space" / 1000000000)) GB; " \
+			>> "$log_file"
+		echo -n "Backup: $(("$projected_backup_size" / 1000000000)) GB. " \
+			>> "$log_file"
+		echo "Terminating remote backup . . ." >> "$log_file"
+
+		error_flag=1
+		email_body+=" - System backup\n"
+
+		return 1
+	fi
+	return 0
+}
+
+
+# # Runs the tar command that performs local system backup with error checking
+# # param Int $1 -- backup level to perform
+# # param Dir $2 -- local host backup dir where all backups are stored
+# # param Dir $3 -- systemdump dir where the system dumps are specifically stored
+# # param File $4 -- snar file to use for differential backups
+# # param File $5 -- tar file prefix to be used for split backup files
+# run_tar_command() {
+# 	local backup_level="$1"
+# 	local local_host_backup_dir="$2"
+# 	local systemdump_dir="$3"
+# 	local snar_file="$4"
+# 	local tar_file_prefix="$5"
+
+# 	# Perform system backup
+# 	# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
+# 	tar cpz --listed-incremental="$snar_file" \
+# 		--exclude="$systemdump_dir/*" \
+# 		--one-file-system / 2>> "$log_file" \
+# 		| split -d -b 1000m - "$local_host_backup_dir/$tar_file_prefix"
+
+# 	# Backup was successful if no error status of previous command
+# 	if (( "${PIPESTATUS[0]}" <= 1 )) ; then
+
+# 		# successful backup
+# 		return 0
+# 	fi
+	
+# 	return 1
+# }
+
 # Runs the tar command that performs local system backup with error checking
 # param Int $1 -- backup level to perform
 # param Dir $2 -- local host backup dir where all backups are stored
@@ -1477,19 +1761,62 @@ remaining_disk_space() {
 run_tar_command() {
 	local backup_level="$1"
 	local local_host_backup_dir="$2"
-	local systemdump_dir="$3"
+	local systemdump_dir="$3" # relative path
 	local snar_file="$4"
 	local tar_file_prefix="$5"
 
-	# Perform system backup
-	# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
-	tar cpz --listed-incremental="$snar_file" \
-		--exclude="$systemdump_dir/*" \
-		--one-file-system / 2>> "$log_file" \
-		| split -d -b 1000m - "$local_host_backup_dir/$tar_file_prefix"
+	local projected_backup_size="$(projected_system_backup_size \
+		"$backup_level" "$systemdump_dir")"
+	local status
+	
+	# Command modded from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
+	local tar_command="tar cpz --listed-incremental=$snar_file \
+		--exclude=$systemdump_dir/* \
+		--one-file-system / 2>> $log_file | tee "
+
+	# local backup
+	if ! yes_response "$remote_system_backup_only" 
+		&& remaining_local_disk_space_ok "$systemdump_dir" \
+			"$projected_backup_size" ; then
+
+		tar_command+=">(split -d -b 1000m - \
+			$local_host_backup_dir/$systemdump_dir/$tar_file_prefix) "
+	fi
+
+	# on-site remote backup
+	if yes_response "$on_site_host_ready" 
+		&& remaining_remote_disk_space_ok ${on_site_host_login_params}
+			"$on_site_host_backup_dir/$systemdump_dir" 
+			"$projected_backup_size" ; then
+
+		tar_command+=">(ssh -q -F /dev/null \
+			$on_site_host_user@$on_site_host_domain \
+			-p $on_site_host_port -i $on_site_host_ssh_key \
+			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+			-o StrictHostKeyChecking=no 'split -d -b 1000m - \
+			'$on_site_host_backup_dir/$systemdump_dir/$tar_file_prefix) "
+	fi
+
+	# off-site remote backup
+	if yes_response "$off_site_host_ready" ; then
+		&& remaining_remote_disk_space_ok ${off_site_host_login_params}
+			"$off_site_host_backup_dir/$systemdump_dir" 
+			"$projected_backup_size" ; then
+
+		tar_command+=">(ssh -q -F /dev/null \
+			$off_site_host_user@$off_site_host_domain \
+			-p $off_site_host_port -i $off_site_host_ssh_key \
+			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+			-o StrictHostKeyChecking=no 'split -d -b 1000m - \
+			'$off_site_host_backup_dir/$systemdump_dir/$tar_file_prefix) "
+	fi
+
+	tar_command+="; status='${PIPESTATUS[0]}'"
+
+	eval "$backup_command"
 
 	# Backup was successful if no error status of previous command
-	if (( "${PIPESTATUS[0]}" <= 1 )) ; then
+	if (( "$status" <= 1 )) ; then
 
 		# successful backup
 		return 0
@@ -1497,6 +1824,7 @@ run_tar_command() {
 	
 	return 1
 }
+
 
 # Function that actually performs entire system backup using tar
 perform_system_backup() {
@@ -1508,14 +1836,14 @@ perform_system_backup() {
 	
 	# Set backup level
 	local backup_level
-	missed_level0_backup "$systemdump_dir" "$level0_tar_file_prefix"* \
+	missed_local_level0_backup "$systemdump_dir" "$level0_tar_file_prefix"* \
 		&& backup_level=0 \
 		|| backup_level=$(backup_cycle_level)
 
 	# backup space needed
 	local projected_backup_size="$(projected_system_backup_size "$backup_level"\
 		"$systemdump_dir")"
-	local remaining_disk_space="$(remaining_disk_space "$systemdump_dir")"
+	local remaining_disk_space="$(remaining_local_disk_space "$systemdump_dir")"
 	
 	# Not enough disk space for backup
 	if (("$remaining_disk_space" < "$projected_backup_size")) ; then
