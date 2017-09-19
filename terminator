@@ -1419,6 +1419,48 @@ missed_remote_level0_backup() {
 	return 1
 }
 
+# checks whether a level0 backup was missed on ANY host
+# param Dir $1 -- the relative backup directory for storing dumps
+# param File $2 -- The files containing the level0 backups
+missed_level0_backup() {
+	local backup_dir="$1" # relative path (systemdump/)
+	local level0_backup_files="$2"
+
+	# local host
+	if ! yes_response \
+			"$remote_system_backup_only" \
+		&& missed_local_level0_backup \
+			"$local_host_backup_dir/$backup_dir" \
+			"$level0_backup_files"
+
+		return 0
+	fi
+
+	# on-site remote backup dirs
+	if yes_response \
+			"$on_site_host_ready" \
+		&& missed_remote_level0_backup \
+			${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir/$backup_dir" \
+			"$level0_backup_files"
+
+		return 0
+	fi
+
+	# off-site remote backup dirs
+	if yes_response \
+			"$off_site_host_ready" \
+		&& missed_remote_level0_backup \
+			${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir/$backup_dir" \
+			"$level0_backup_files"
+
+		return 0
+	fi
+
+	return 1
+}
+
 # creates a temporary ssh config file for scp option -3
 # param File $1 -- location and name of file to create (full path)
 # param host1_login_params
@@ -1631,7 +1673,7 @@ remaining_local_disk_space() {
 remaining_local_disk_space_ok() {
 	local systemdump_dir="$1"
 	local projected_backup_size="$2"
-	
+
 	local remaining_disk_space="$(remaining_local_disk_space "$systemdump_dir")"
 
 	if (( "$projected_backup_size" > "$remaining_disk_space" )) ; then
@@ -1754,19 +1796,18 @@ remaining_remote_disk_space_ok() {
 
 # Runs the tar command that performs local system backup with error checking
 # param Int $1 -- backup level to perform
-# param Dir $2 -- local host backup dir where all backups are stored
-# param Dir $3 -- systemdump dir where the system dumps are specifically stored
-# param File $4 -- snar file to use for differential backups
-# param File $5 -- tar file prefix to be used for split backup files
+# param Dir $2 -- systemdump dir where the system dumps are specifically stored
+# param File $3 -- snar file to use for differential backups
+# param File $4 -- tar file prefix to be used for split backup files
 run_tar_command() {
 	local backup_level="$1"
-	local local_host_backup_dir="$2"
-	local systemdump_dir="$3" # relative path
-	local snar_file="$4"
-	local tar_file_prefix="$5"
+	local systemdump_dir="$2" # relative path
+	local snar_file="$3"
+	local tar_file_prefix="$4"
 
 	local projected_backup_size="$(projected_system_backup_size \
 		"$backup_level" "$systemdump_dir")"
+	local backup_ready=1
 	local status
 	
 	# Command modded from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
@@ -1780,7 +1821,9 @@ run_tar_command() {
 			"$projected_backup_size" ; then
 
 		tar_command+=">(split -d -b 1000m - \
-			$local_host_backup_dir/$systemdump_dir/$tar_file_prefix) "
+			$local_host_backup_dir/$tar_file_prefix) "
+
+		backup_ready=0
 	fi
 
 	# on-site remote backup
@@ -1794,7 +1837,9 @@ run_tar_command() {
 			-p $on_site_host_port -i $on_site_host_ssh_key \
 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 			-o StrictHostKeyChecking=no 'split -d -b 1000m - \
-			'$on_site_host_backup_dir/$systemdump_dir/$tar_file_prefix) "
+			'$on_site_host_backup_dir/$tar_file_prefix) "
+
+		backup_ready=0
 	fi
 
 	# off-site remote backup
@@ -1808,15 +1853,18 @@ run_tar_command() {
 			-p $off_site_host_port -i $off_site_host_ssh_key \
 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 			-o StrictHostKeyChecking=no 'split -d -b 1000m - \
-			'$off_site_host_backup_dir/$systemdump_dir/$tar_file_prefix) "
+			'$off_site_host_backup_dir/$tar_file_prefix) "
+
+		backup_ready=0
 	fi
 
 	tar_command+="; status='${PIPESTATUS[0]}'"
 
 	eval "$backup_command"
 
-	# Backup was successful if no error status of previous command
-	if (( "$status" <= 1 )) ; then
+	# Backup was successful if no error status of previous command and backup
+	#     was actually run
+	if (( "$status" <= 1 && "$backup_ready" < 1 )) ; then
 
 		# successful backup
 		return 0
@@ -1825,45 +1873,69 @@ run_tar_command() {
 	return 1
 }
 
+remove_local_temp_backup() {
+	local backup_dir="$1" # absolute path
+	local backup_files=${2}
+
+	rm "$backup_dir/"${backup_files}
+}
+
+remove_remote_temp_backup() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local backup_dir="$5" # absolute path
+	local backup_files=${6}
+
+	ssh -q -F /dev/null "$user@$domain" -p "$port" \
+		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no '
+
+		rm "'$backup_dir'/"'${backup_files}'
+	'
+}
+
+remove_temp_backup() {
+	local backup_dir="$1" # relative path
+	local backup_files=${2}
+
+	if ! yes_response "$remote_system_backup_only" ; then
+		remove_local_temp_backup "$local_host_backup_dir" ${backup_files}
+	fi
+
+	# on-site remote backup dirs
+	if yes_response "$on_site_host_ready" ; then
+		remove_remote_temp_backup ${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir" ${backup_files}
+	fi
+
+	# off-site remote backup dirs
+	if yes_response "$off_site_host_ready" ; then
+		remove_remote_temp_backup ${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir" ${backup_files}
+	fi
+}
 
 # Function that actually performs entire system backup using tar
 perform_system_backup() {
 	local level0_tar_file_prefix="$HOSTNAME.systemdump.level_0.tar.gz"
+	local systemdump_dir="systemdump/"
+	local backup_level
+	local tar_file_prefix
+	local snar_file
 
 	# Create system backup directory
 	create_local_backup_dirs "$local_host_backup_dir" "systemdump"
-	local systemdump_dir="$local_host_backup_dir/systemdump"
+	create_backup_dirs "systemdump"
 	
 	# Set backup level
-	local backup_level
-	missed_local_level0_backup "$systemdump_dir" "$level0_tar_file_prefix"* \
+	missed_level0_backup "$systemdump_dir" "$level0_tar_file_prefix"* \
 		&& backup_level=0 \
 		|| backup_level=$(backup_cycle_level)
 
-	# backup space needed
-	local projected_backup_size="$(projected_system_backup_size "$backup_level"\
-		"$systemdump_dir")"
-	local remaining_disk_space="$(remaining_local_disk_space "$systemdump_dir")"
-	
-	# Not enough disk space for backup
-	if (("$remaining_disk_space" < "$projected_backup_size")) ; then
-		echo -n "System Backup Error: not enough disk space remaining for " \
-			>> "$log_file"
-		echo -n "local backup.  " >> "$log_file"
-
-		echo -n "Remaining: $(("$remaining_disk_space" / 1000000000)) GB; " \
-			>> "$log_file"
-		echo -n "Backup: $(("$projected_system_backup_size" / 1000000000)) GB. " \
-			>> "$log_file"
-		echo "Terminating backup . . ." >> "$log_file"
-
-		error_flag=1
-		email_body+=" - System backup\n"
-		return 1
-	fi
-
 	# Backup file name
-	local tar_file_prefix="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
+	tar_file_prefix="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
 
 	# Backup already run today; prevent accidental overwrite
 	if backup_level_rerun "$systemdump_dir/$tar_file_prefix"* ; then
@@ -1885,7 +1957,7 @@ perform_system_backup() {
 	# Tar command unsuccessful
 	if (($? > 0)) ; then
 		rm "$snar_file"
-		rm "$local_host_backup_dir/$tar_file_prefix"*
+		remove_temp_backup "$systemdump_dir" "$tar_file_prefix"*
 
 		error_flag=1
 		email_body+=" - System backup\n"
