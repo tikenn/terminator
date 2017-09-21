@@ -1285,17 +1285,17 @@ backup_cycle_level() {
 	echo "$backup_level"
 }
 
-# Resets dumps by removing all files in current dump directory so that a new
-#     level 0 dump can be placed inside
+# Resets dumps locally by removing all files in current dump directory so that 
+#     a new level 0 dump can be placed inside
 # Expects files to be named xxxxxxlevel_#.tar.gz or xxxxlevel_#.snar
 # param Dir $1 -- directory where system dumps are stored
 # param Int $2 -- level to reset dumps to (if null, removes everything)
-reset_dumps() {
-	local dump_dir="$1"
+reset_local_dumps() {
+	local dump_dir="$1" # absolute path
 	local backup_level="$2"
 	local file_level
 
-	if [[ -z "$backup_level" ]] ; then
+	if [[ "$backup_level" = "0" ]] ; then
 		rm -rf "$dump_dir"/*
 
 	else
@@ -1315,22 +1315,79 @@ reset_dumps() {
 	fi
 }
 
-# Resets system backup directory to cycle 0 or cycle 1 by deleting everything
-#     after the respective cycle.  Preps for restart of differential backup 
-#     cycle for next round of differential backups (this function needs to be renamed to something like backup_directory_restart or backup_directory_cycle_restart)
-# param Int -- backup level
-backup_cycle_reset() {
-	local backup_level="$1"
+# Resets dumps locally by removing all files in current dump directory so that 
+#     a new level 0 dump can be placed inside
+# Expects files to be named xxxxxxlevel_#.tar.gz or xxxxlevel_#.snar
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param Dir $5 -- directory where system dumps are stored
+# param Int $6 -- level to reset dumps to (if null, removes everything)
+reset_remote_dumps() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local dump_dir="$5" # absolute path
+	local backup_level="$6"
 
-	# Level 0 backups reset everything back to start
-	if [[ "$backup_level" == "0" ]] ; then
-		reset_dumps "$systemdump_dir"
+	# trying a super experimental technique here --> run local function remotely
+	ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" -o \
+		IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no '
 
-	# Level 1 backups reset back to after level 0 for cycling
-	elif [[ "$backup_level" == "1" ]] ; then
-		reset_dumps "$systemdump_dir" "0"
+		$(declare -f reset_local_dumps) # transfers local function to remote host
+		reset_local_dumps '"$dump_dir"' '"$backup_level"'
+	'
+}
+
+# Resets dumps to specified level for all backup locations that are active
+# param Dir $1 -- directory where system dumps are stored
+# param Int $2 -- level to reset dumps to (if null, removes everything)
+reset_dumps() {
+	local dump_dir="$1" # relative path
+	local backup_level="$2"
+
+	if ! yes_response "$remote_system_backup_only" ; then
+		reset_local_dumps \
+			"$local_host_backup_dir/$systemdump_dir" \
+			"$backup_level"
+	fi
+
+	# on-site remote backup dirs
+	if yes_response "$on_site_host_ready" ; then
+		reset_remote_dumps \
+			${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir/$systemdump_dir" \
+			"$backup_level"
+	fi
+
+	# off-site remote backup dirs
+	if yes_response "$off_site_host_ready" ; then
+		reset_remote_dumps \
+			${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir/$systemdump_dir" \
+			"$backup_level"
 	fi
 }
+
+# # Resets system backup directory to cycle 0 or cycle 1 by deleting everything
+# #     after the respective cycle.  Preps for restart of differential backup 
+# #     cycle for next round of differential backups (this function needs to be renamed to something like backup_directory_restart or backup_directory_cycle_restart)
+# # param Int -- backup level
+# backup_cycle_reset() {
+# 	local backup_level="$1"
+
+# 	# Level 0 backups reset everything back to start
+# 	if [[ "$backup_level" == "0" ]] ; then
+# 		reset_dumps "$systemdump_dir"
+
+# 	# Level 1 backups reset back to after level 0 for cycling
+# 	elif [[ "$backup_level" == "1" ]] ; then
+# 		reset_dumps "$systemdump_dir" "0"
+# 	fi
+# }
 
 # Determines if a level 0 backup has been missed
 # param Dir $1 -- backup directory
@@ -1568,7 +1625,6 @@ copy_level0_to_missed_host() {
 
 	fi
 }
-
 
 # Creates and names appropriate snar file based on backup_level and previous 
 #     one present
@@ -1917,17 +1973,21 @@ remove_temp_backup() {
 	fi
 }
 
+move_backup() {
+	
+}
+
 # Function that actually performs entire system backup using tar
 perform_system_backup() {
 	local level0_tar_file_prefix="$HOSTNAME.systemdump.level_0.tar.gz"
-	local systemdump_dir="systemdump/"
+	local systemdump_dir="systemdump"
 	local backup_level
 	local tar_file_prefix
 	local snar_file
 
 	# Create system backup directory
-	create_local_backup_dirs "$local_host_backup_dir" "systemdump"
-	create_backup_dirs "systemdump"
+	create_local_backup_dirs "$local_host_backup_dir" "$systemdump_dir"
+	create_backup_dirs "$systemdump_dir"
 	
 	# Set backup level
 	missed_level0_backup "$systemdump_dir" "$level0_tar_file_prefix"* \
@@ -1968,8 +2028,8 @@ perform_system_backup() {
 	echo "System Backup Info:  performed level $backup_level backup" \
 		>> "$log_file"
 
-	backup_cycle_reset "$backup_level"
-	mv "$snar_file" "$systemdump_dir"
+	reset_dumps "$systemdump_dir" "$backup_level"
+	mv "$local_host_backup_dir/$snar_file" "$systemdump_dir"
 	mv "$local_host_backup_dir/$tar_file_prefix"* "$systemdump_dir"
 
 	return 0
@@ -1978,6 +2038,9 @@ perform_system_backup() {
 # perform_system_backup
 
 echo >> "$log_file"
+
+#Test:
+# error out tar command by setting to remote_only backups and no remote backups
 
 
 # ------------------------- #
