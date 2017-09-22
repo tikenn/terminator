@@ -1455,11 +1455,11 @@ missed_remote_level0_backup() {
 
 		if ls -A '${level0_backup_files}' &> /dev/null ; then
 			local first_level0_backup_file="$(ls '${level0_backup_files}' \
-				| awk "FNR == 1 {print $6}")"
+				| awk "FNR == 1 {print \$6}")"
 
 				last_known_backup_date="$(date -d "$(ls -lFt --full-time \
 					"$first_level0_backup_file" \
-					| awk "FNR == 1 {print $6}")" +"%Y%m%d")"
+					| awk "FNR == 1 {print \$6}")" +"%Y%m%d")"
 
 		else
 			known_backup_date=0
@@ -1489,6 +1489,7 @@ missed_level0_backup() {
 		&& missed_local_level0_backup \
 			"$local_host_backup_dir/$backup_dir" \
 			"$level0_backup_files"
+	then
 
 		return 0
 	fi
@@ -1500,6 +1501,7 @@ missed_level0_backup() {
 			${on_site_host_login_params[@]} \
 			"$on_site_host_backup_dir/$backup_dir" \
 			"$level0_backup_files"
+	then
 
 		return 0
 	fi
@@ -1511,6 +1513,7 @@ missed_level0_backup() {
 			${off_site_host_login_params[@]} \
 			"$off_site_host_backup_dir/$backup_dir" \
 			"$level0_backup_files"
+	then
 
 		return 0
 	fi
@@ -1518,113 +1521,113 @@ missed_level0_backup() {
 	return 1
 }
 
-# creates a temporary ssh config file for scp option -3
-# param File $1 -- location and name of file to create (full path)
-# param host1_login_params
-# param host2_login_params
-create_ssh_config_file() {
-	local ssh_config_file="$1"
-	local domain="$2"
-	local port="$3"
-	local user="$4"
-	local ssh_key="$5"
-	local domain2="$6"
-	local port2="$7"
-	local user2="$8"
-	local ssh_key2="$9"
+# # creates a temporary ssh config file for scp option -3
+# # param File $1 -- location and name of file to create (full path)
+# # param host1_login_params
+# # param host2_login_params
+# create_ssh_config_file() {
+# 	local ssh_config_file="$1"
+# 	local domain="$2"
+# 	local port="$3"
+# 	local user="$4"
+# 	local ssh_key="$5"
+# 	local domain2="$6"
+# 	local port2="$7"
+# 	local user2="$8"
+# 	local ssh_key2="$9"
 
-	touch "$ssh_config_file"
-	echo "Host host1" >> "$ssh_config_file"
-	echo -e "\tHostName $domain" >> "$ssh_config_file"
-	echo -e "\tUser $user" >> "$ssh_config_file"
-	echo -e "\tPort $port" >> "$ssh_config_file"
-	echo -e "\tIdentityFile $ssh_key" >> "$ssh_config_file"
-	echo >> "$ssh_config_file"
+# 	touch "$ssh_config_file"
+# 	echo "Host host1" >> "$ssh_config_file"
+# 	echo -e "\tHostName $domain" >> "$ssh_config_file"
+# 	echo -e "\tUser $user" >> "$ssh_config_file"
+# 	echo -e "\tPort $port" >> "$ssh_config_file"
+# 	echo -e "\tIdentityFile $ssh_key" >> "$ssh_config_file"
+# 	echo >> "$ssh_config_file"
 
-	echo "Host host2" >> "$ssh_config_file"
-	echo -e "\tHostName $domain2" >> "$ssh_config_file"
-	echo -e "\tUser $user2" >> "$ssh_config_file"
-	echo -e "\tPort $port2" >> "$ssh_config_file"
-	echo -e "\tIdentityFile $ssh_key2" >> "$ssh_config_file"
-	echo >> "$ssh_config_file"
+# 	echo "Host host2" >> "$ssh_config_file"
+# 	echo -e "\tHostName $domain2" >> "$ssh_config_file"
+# 	echo -e "\tUser $user2" >> "$ssh_config_file"
+# 	echo -e "\tPort $port2" >> "$ssh_config_file"
+# 	echo -e "\tIdentityFile $ssh_key2" >> "$ssh_config_file"
+# 	echo >> "$ssh_config_file"
 
-	echo "Host *" >> "$ssh_config_file"
-	echo -e "\tIdentitiesOnly yes" >> "$ssh_config_file"
-	echo -e "\tStrictHostKeyChecking no" >> "$ssh_config_file"
-}
+# 	echo "Host *" >> "$ssh_config_file"
+# 	echo -e "\tIdentitiesOnly yes" >> "$ssh_config_file"
+# 	echo -e "\tStrictHostKeyChecking no" >> "$ssh_config_file"
+# }
 
-create_ssh_config_file "test_config" ${on_site_host_login_params[@]} ${off_site_host_login_params[@]}
+# create_ssh_config_file "test_config" ${on_site_host_login_params[@]} ${off_site_host_login_params[@]}
 
-# deletes the config file that was used
-# param File $1 -- the file containing the ssh config to delete
-delete_ssh_config_file() {
-	local ssh_config_file="$1"
+# # deletes the config file that was used
+# # param File $1 -- the file containing the ssh config to delete
+# delete_ssh_config_file() {
+# 	local ssh_config_file="$1"
 
-	rm "$ssh_config_file"
-}
+# 	rm "$ssh_config_file"
+# }
 
-# Copies a missed level 0 backup from a host that has it to a host that doesn't
-# param Array $1 -$4? -- Host to copy from
-# param Array $5 - 8? -- Host to copy to
-# param Files $9 -- set of level0 backup files
-# param Dir $10 -- location to copy level0 backup to
-copy_level0_to_missed_host() {
-	local domain
-	local port
-	local user
-	local ssh_key
-	local domain2
-	local port2
-	local user2
-	local ssh_key2
-	local level0_backup # full path and file pattern of level0 backup files (level0.tar.gz*)
-	local backup_location # full path
+# # Copies a missed level 0 backup from a host that has it to a host that doesn't
+# # param Array $1 -$4? -- Host to copy from
+# # param Array $5 - 8? -- Host to copy to
+# # param Files $9 -- set of level0 backup files
+# # param Dir $10 -- location to copy level0 backup to
+# copy_level0_to_missed_host() {
+# 	local domain
+# 	local port
+# 	local user
+# 	local ssh_key
+# 	local domain2
+# 	local port2
+# 	local user2
+# 	local ssh_key2
+# 	local level0_backup # full path and file pattern of level0 backup files (level0.tar.gz*)
+# 	local backup_location # full path
 
-	if [[ "$1" = "localhost" ]] ; then
-		domain="$2"
-		port="$3"
-		user="$4"
-		ssh_key="$5"
-		level0_backup=${6}
-		backup_location="$7"
+# 	if [[ "$1" = "localhost" ]] ; then
+# 		domain="$2"
+# 		port="$3"
+# 		user="$4"
+# 		ssh_key="$5"
+# 		level0_backup=${6}
+# 		backup_location="$7"
 
-		scp -P "$port" -i "$ssh_key" -o IdentitiesOnly=no \
-			-o StrictHostKeyChecking=no \
-			${level0_backup} \
-			"$user@$domain:$backup_location"
+# 		scp -P "$port" -i "$ssh_key" -o IdentitiesOnly=no \
+# 			-o StrictHostKeyChecking=no \
+# 			${level0_backup} \
+# 			"$user@$domain:$backup_location"
 
-	elif [[ "$5" = "localhost" ]] ; then
-		domain="$1"
-		port="$2"
-		user="$3"
-		ssh_key="$4"
-		level0_backup=${6}
-		backup_location="$7"
+# 	elif [[ "$5" = "localhost" ]] ; then
+# 		domain="$1"
+# 		port="$2"
+# 		user="$3"
+# 		ssh_key="$4"
+# 		level0_backup=${6}
+# 		backup_location="$7"
 
-		scp -P "$port" -i "$ssh_key" -o IdentitiesOnly=no \
-			-o StrictHostKeyChecking=no \
-			"$user@$domain:"${level0_backup} \
-			"$backup_location"
+# 		scp -P "$port" -i "$ssh_key" -o IdentitiesOnly=no \
+# 			-o StrictHostKeyChecking=no \
+# 			"$user@$domain:"${level0_backup} \
+# 			"$backup_location"
 
-	else
-		domain="$1"
-		port="$2"
-		user="$3"
-		ssh_key="$4"
-		domain2="$5"
-		port2="$6"
-		user2="$7"
-		ssh_key2="$8"
-		level0_backup=${9}
-		backup_location="${10}"
+# 	else
+# 		domain="$1"
+# 		port="$2"
+# 		user="$3"
+# 		ssh_key="$4"
+# 		domain2="$5"
+# 		port2="$6"
+# 		user2="$7"
+# 		ssh_key2="$8"
+# 		level0_backup=${9}
+# 		backup_location="${10}"
 
-		ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" \
-			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-			'scp -P '$port2' -i'
+# 		ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" \
+# 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+# 			'scp -P '$port2' -i'
 
 
-	fi
-}
+# 	fi
+# }
 
 # Creates and names appropriate snar file based on backup_level and previous 
 #     one present
@@ -1678,7 +1681,7 @@ projected_system_backup_size() {
 		--warning=none \
 		--listed-incremental="$temp_snar" \
 		--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
-		--one-file-system / | wc -c)"
+		--one-file-system /home/tikenn/Desktop/test | wc -c)"
 
 	# Delete temporary snar file for checking remaining disk space for backup
 	rm "$temp_snar"
@@ -1766,15 +1769,18 @@ remaining_remote_disk_space() {
 	local ssh_key="$4"
 	local systemdump_dir="$5" # full path
 
+	# echo "remaining_remote_disk_space systemdump: $systemdump_dir"
+	# echo
+
 	# Disk space remaining in partition containing systemdump_dir
 	# Note: df returns disk space in kilobytes, converting to bytes for
 	#     comparison
 	local remaining_disk_space=$(ssh -q -F /dev/null "$user@$domain" \
-		-p "$port" -i "$ssh_key" -o IdentitiesOnly=yes 
+		-p "$port" -i "$ssh_key" -o IdentitiesOnly=yes \
 		-o StrictHostKeyChecking=no '
 		
 		echo $(( $(df '"$systemdump_dir"' \
-			| awk "FNR == 2 {$print $4}") * 1000 ))
+			| awk "FNR == 2 {print \$4}") * 1000 ))
 	')
 
 	# return
@@ -1798,10 +1804,16 @@ remaining_remote_disk_space_ok() {
 	local systemdump_dir="$5"
 	local projected_backup_size="$6"
 	local remaining_disk_space="$(remaining_remote_disk_space \
-		${login_params} "$systemdump_dir")"
+		${login_params[@]} "$systemdump_dir")"
+
+	echo "remaining_remote_disk_space_ok login params: ${login_params[@]}"
+	echo "remaining_remote_disk_space_ok systemdump: $systemdump_dir"
+	echo "remaining_remote_disk_space_ok projected backup size: $projected_backup_size"
+	echo "remaining_remote_disk_space_ok remaining disk space: $remaining_disk_space"
+	echo
 
 	if (( "$projected_backup_size" > "$remaining_disk_space" )) ; then
-		echo -n "System Backup Error: not enought disk space remaining for " \
+		echo -n "System Backup Error: not enough disk space remaining for " \
 			>> "$log_file"
 		echo -n "remote host (${login_params[0]}) backup.  " >> "$log_file"
 
@@ -1865,27 +1877,31 @@ run_tar_command() {
 		"$backup_level" "$systemdump_dir")"
 	local backup_ready=1
 	local status
+
+	echo "run_tar_command projected backup size: $projected_backup_size"
+	echo
 	
 	# Command modded from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 	local tar_command="tar cpz --listed-incremental=$snar_file \
 		--exclude=$systemdump_dir/* \
-		--one-file-system / 2>> $log_file | tee "
+		--one-file-system /home/tikenn/Desktop/test 2>> $log_file | tee "
 
 	# local backup
-	if ! yes_response "$remote_system_backup_only" 
-		&& remaining_local_disk_space_ok "$systemdump_dir" \
+	if ! yes_response "$remote_system_backup_only" \
+		&& remaining_local_disk_space_ok \
+			"$local_host_backup_dir/$systemdump_dir" \
 			"$projected_backup_size" ; then
 
 		tar_command+=">(split -d -b 1000m - \
 			$local_host_backup_dir/$tar_file_prefix) "
-
 		backup_ready=0
 	fi
 
+	echo "before remote tar command"
 	# on-site remote backup
-	if yes_response "$on_site_host_ready" 
-		&& remaining_remote_disk_space_ok ${on_site_host_login_params}
-			"$on_site_host_backup_dir/$systemdump_dir" 
+	if yes_response "$on_site_host_ready" \
+		&& remaining_remote_disk_space_ok ${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir/$systemdump_dir" \
 			"$projected_backup_size" ; then
 
 		tar_command+=">(ssh -q -F /dev/null \
@@ -1899,9 +1915,9 @@ run_tar_command() {
 	fi
 
 	# off-site remote backup
-	if yes_response "$off_site_host_ready" ; then
-		&& remaining_remote_disk_space_ok ${off_site_host_login_params}
-			"$off_site_host_backup_dir/$systemdump_dir" 
+	if yes_response "$off_site_host_ready" \
+		&& remaining_remote_disk_space_ok ${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir/$systemdump_dir" \
 			"$projected_backup_size" ; then
 
 		tar_command+=">(ssh -q -F /dev/null \
@@ -1913,6 +1929,7 @@ run_tar_command() {
 
 		backup_ready=0
 	fi
+	echo "after remote tar command"
 
 	tar_command+="; status='${PIPESTATUS[0]}'"
 
@@ -1973,8 +1990,52 @@ remove_temp_backup() {
 	fi
 }
 
+# Moves the backup on a remote host to a different location
+# param String $1 -- domain name of host
+# param String $2 -- SSH port of host
+# param String $3 -- backup user of host
+# param String $4 -- host ssh key (no passphrase allowed)
+# param Files $5 -- files on backup host to move
+# param Dir $6 -- destination to move files to
+move_remote_backup() {
+	local domain="$1"
+	local port="$2"
+	local user="$3"
+	local ssh_key="$4"
+	local fs_obj="$5" # absolute path
+	local destination="$6" # absolute path
+
+	ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" -o \
+		IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+		-o StrictHostKeyChecking=no '
+
+		mv '"$fs_obj"' '"$destination"'
+	'
+}
+
+# Moves the backup on the hosts from the temporary location to the permanent
+#     location
+# param Files $1 -- files on backup host to move
+# param Dir $2 -- destination to move files to
 move_backup() {
-	
+	local fs_obj="$1" # relative path
+	local destination="$2" # relative path
+
+	if ! yes_response "$remote_system_backup_only" ; then
+		mv "$local_host_backup_dir/$fs_obj" "$local_host_backup_dir/$destination"
+	fi
+
+	# on-site remote backup dirs
+	if yes_response "$on_site_host_ready" ; then
+		move_remote_backup ${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir/$fs_obj" "$destination"
+	fi
+
+	# off-site remote backup dirs
+	if yes_response "$off_site_host_ready" ; then
+		create_remote_backup_dirs ${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir/$fs_obj" "$destination"
+	fi
 }
 
 # Function that actually performs entire system backup using tar
@@ -2011,7 +2072,7 @@ perform_system_backup() {
 		"$local_host_backup_dir")"
 
 	# perform backup
-	run_tar_command "$backup_level" "$local_host_backup_dir" "$systemdump_dir" \
+	run_tar_command "$backup_level" "$systemdump_dir" \
 		"$snar_file" "$tar_file_prefix"
 
 	# Tar command unsuccessful
@@ -2030,12 +2091,12 @@ perform_system_backup() {
 
 	reset_dumps "$systemdump_dir" "$backup_level"
 	mv "$local_host_backup_dir/$snar_file" "$systemdump_dir"
-	mv "$local_host_backup_dir/$tar_file_prefix"* "$systemdump_dir"
+	move_backup "$tar_file_prefix"* "$systemdump_dir"
 
 	return 0
 }
 
-# perform_system_backup
+perform_system_backup
 
 echo >> "$log_file"
 
