@@ -1337,7 +1337,7 @@ reset_remote_dumps() {
 		IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 		-o StrictHostKeyChecking=no '
 
-		$(declare -f reset_local_dumps) # transfers local function to remote host
+		$(declare -f) # transfers local function to remote host
 		reset_local_dumps '"$dump_dir"' '"$backup_level"'
 	'
 }
@@ -1908,8 +1908,9 @@ run_tar_command() {
 			$on_site_host_user@$on_site_host_domain \
 			-p $on_site_host_port -i $on_site_host_ssh_key \
 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-			-o StrictHostKeyChecking=no 'split -d -b 1000m - \
-			'$on_site_host_backup_dir/$tar_file_prefix) "
+			'cat &> /media/odonata_farm.back/test/test.txt')"
+			# | split -d -b 1000m - \
+			# '$on_site_host_backup_dir/$tar_file_prefix) "
 
 		backup_ready=0
 	fi
@@ -1924,16 +1925,19 @@ run_tar_command() {
 			$off_site_host_user@$off_site_host_domain \
 			-p $off_site_host_port -i $off_site_host_ssh_key \
 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-			-o StrictHostKeyChecking=no 'split -d -b 1000m - \
+			'cat | split -d -b 1000m - \
 			'$off_site_host_backup_dir/$tar_file_prefix) "
 
 		backup_ready=0
 	fi
 	echo "after remote tar command"
 
-	tar_command+="; status='${PIPESTATUS[0]}'"
+	tar_command+='; status=${PIPESTATUS[0]}'
 
-	eval "$backup_command"
+	echo "run_tar_command: $tar_command"
+	eval "$tar_command"
+
+	echo "run_tar_command status: $status"
 
 	# Backup was successful if no error status of previous command and backup
 	#     was actually run
@@ -2002,14 +2006,14 @@ move_remote_backup() {
 	local port="$2"
 	local user="$3"
 	local ssh_key="$4"
-	local fs_obj="$5" # absolute path
+	local fs_obj=${5} # absolute path
 	local destination="$6" # absolute path
 
 	ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" -o \
 		IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 		-o StrictHostKeyChecking=no '
 
-		mv '"$fs_obj"' '"$destination"'
+		mv '${fs_obj}' '"$destination"'
 	'
 }
 
@@ -2018,23 +2022,23 @@ move_remote_backup() {
 # param Files $1 -- files on backup host to move
 # param Dir $2 -- destination to move files to
 move_backup() {
-	local fs_obj="$1" # relative path
+	local fs_obj=${1} # relative path
 	local destination="$2" # relative path
 
 	if ! yes_response "$remote_system_backup_only" ; then
-		mv "$local_host_backup_dir/$fs_obj" "$local_host_backup_dir/$destination"
+		mv "$local_host_backup_dir/"${fs_obj} "$local_host_backup_dir/$destination"
 	fi
 
 	# on-site remote backup dirs
 	if yes_response "$on_site_host_ready" ; then
 		move_remote_backup ${on_site_host_login_params[@]} \
-			"$on_site_host_backup_dir/$fs_obj" "$destination"
+			"$on_site_host_backup_dir/"${fs_obj} "$destination"
 	fi
 
 	# off-site remote backup dirs
 	if yes_response "$off_site_host_ready" ; then
 		create_remote_backup_dirs ${off_site_host_login_params[@]} \
-			"$off_site_host_backup_dir/$fs_obj" "$destination"
+			"$off_site_host_backup_dir/"${fs_obj} "$destination"
 	fi
 }
 
@@ -2090,7 +2094,7 @@ perform_system_backup() {
 		>> "$log_file"
 
 	reset_dumps "$systemdump_dir" "$backup_level"
-	mv "$local_host_backup_dir/$snar_file" "$systemdump_dir"
+	mv "$snar_file" "$local_host_backup_dir/$systemdump_dir"
 	move_backup "$tar_file_prefix"* "$systemdump_dir"
 
 	return 0
