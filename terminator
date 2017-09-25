@@ -1793,7 +1793,7 @@ run_tar_command() {
 	
 	# Command modded from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 	local tar_command="tar cpz --listed-incremental=$snar_file \
-		--exclude=$systemdump_dir/* \
+		--exclude=$local_host_backup_dir/$systemdump_dir/* \
 		$(system_backup_location_exclusion) \
 		--one-file-system / 2>> $log_file | tee "
 
