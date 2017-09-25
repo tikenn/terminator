@@ -1904,6 +1904,18 @@ remaining_remote_disk_space_ok() {
 # 	return 1
 # }
 
+# Formats the excluded directories in a proper format for tar command
+system_backup_location_exclusion() {
+	local exclude_string=""
+	if [[ -n "$system_backup_ignore_list" ]] ; then
+		for location in ${system_backup_ignore_list[@]} ; do
+			exclude_string+="--exclude=$location "
+		done
+	fi
+
+	echo "$exclude_string"
+}
+
 # Runs the tar command that performs local system backup with error checking
 # param Int $1 -- backup level to perform
 # param Dir $2 -- systemdump dir where the system dumps are specifically stored
@@ -1926,6 +1938,7 @@ run_tar_command() {
 	# Command modded from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 	local tar_command="tar cpz --listed-incremental=$snar_file \
 		--exclude=$systemdump_dir/* \
+		$(system_backup_location_exclusion) \
 		--one-file-system /home/tikenn/Desktop/test 2>> $log_file | tee "
 
 	# local backup
@@ -1952,10 +1965,6 @@ run_tar_command() {
 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 			'cat | split -d -b 1000m - \
 			'$on_site_host_backup_dir/$tar_file_prefix) "
-
-			# &> /media/odonata_farm.back/test/test.txt')"
-			# | split -d -b 1000m - \
-			# '$on_site_host_backup_dir/$tar_file_prefix) "
 
 		backup_ready=0
 	fi
@@ -2166,7 +2175,6 @@ perform_system_backup() {
 
 		return 1
 	fi
-
 
 	# Tar successful
 	echo "System Backup Info:  performed level $backup_level backup" \
