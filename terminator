@@ -662,15 +662,6 @@ check_remote_host_ready() {
 	fi
 }
 
-check_remote_host_ready ${on_site_host_login_params[@]} \
-	"$on_site_host_backup_dir" "on_site_host_ready"
-
-check_remote_host_ready ${off_site_host_login_params[@]} \
-	"$off_site_host_backup_dir" "off_site_host_ready"
-
-echo "on-site host status: $on_site_host_ready"
-echo "off-site host status: $off_site_host_ready"
-
 # Creates the remote backup directories from an array listing the desired 
 #     directories
 # param String $1 -- domain name of host
@@ -703,6 +694,36 @@ create_remote_backup_dirs() {
 		done
 	'
 }
+
+# Remote system checking
+echo "# Remote System Checking" >> "$log_file"
+
+check_remote_host_ready ${on_site_host_login_params[@]} \
+	"$on_site_host_backup_dir" "on_site_host_ready"
+
+check_remote_host_ready ${off_site_host_login_params[@]} \
+	"$off_site_host_backup_dir" "off_site_host_ready"
+
+echo "on-site host status: $on_site_host_ready"
+echo "off-site host status: $off_site_host_ready"
+
+# on-site host ready status and errors
+if yes_response "$on_site_host_ready" ; then
+	echo "On-site Host Info: ready" >> "$log_file"
+else
+	error_flag=1
+	email_body+=" - On-site Remote System\n"
+fi
+
+# off-site host ready status and errors
+if yes_response "$off_site_host_ready" ; then
+	echo "Off-site Host Info: ready" >> "$log_file"
+else
+	error_flag=1
+	email_body+=" - Off-site Remote System\n"
+fi
+
+echo >> "$log_file"
 
 
 # --------------- #
