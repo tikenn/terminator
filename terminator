@@ -1628,7 +1628,8 @@ projected_system_backup_size() {
 	local backup_size="$(tar cpz \
 		--warning=none \
 		--listed-incremental="$temp_snar" \
-		--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
+		--exclude="$local_host_backup_dir/$systemdump_dir/*" \
+		$(system_backup_location_exclusion) \
 		--one-file-system / | wc -c)"
 
 	# Delete temporary snar file for checking remaining disk space for backup
