@@ -37,6 +37,38 @@ fi
 # Load in user configurations
 . "$install_location/terminator.conf"
 
+
+# curate the log location to user specifications in terminator.conf
+curate_logs() {
+	echo "log_file_rollover: $log_file_rollover"
+	if [[ -z $log_file_rollover ]] && ! [[ $log_file_rollover =~ ^[0-9]+$ ]]
+	then
+		log_file_rollover=20
+	fi
+
+	local file_count="$(ls -1 "$install_location/log" | wc -l)"
+	local oldest_file
+
+	echo "file count: $file_count"
+	echo "log_file_rollover: $log_file_rollover"
+	echo
+
+	while (("$file_count" > "$log_file_rollover")) ; do
+		oldest_file="$(ls -lFtr "$install_location/log" \
+			| awk 'FNR == 2 {print $9}')"
+
+		echo "oldest file: $oldest_file"
+		echo
+
+		rm -rf "$install_location/log/$oldest_file"
+
+		file_count="$(ls -1 "$install_location/log" | wc -l)"
+	done
+}
+
+curate_logs
+
+
 # Setup error traking for emails
 error_flag=0
 email_body="List of errors during system maintenance\n"
@@ -874,7 +906,7 @@ curate_local_backups() {
 	local backup_dir="$1"
 	local backup_dir_rollover="$2"
 
-	file_count="$(ls -1 "$backup_dir" | wc -l)"
+	local file_count="$(ls -1 "$backup_dir" | wc -l)"
 
 	# Remove files until only the amount in rollover exist
 	while (("$file_count" > "$backup_dir_rollover")) ; do
@@ -908,7 +940,7 @@ curate_remote_backups() {
 	local backup_dir="$5"
 	local backup_dir_rollover="$6"
 
-	files_removed=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
+	local files_removed=$(ssh -q -F /dev/null "$user@$domain" -p "$port" \
 		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 		-o StrictHostKeyChecking=no '
 
@@ -1337,7 +1369,7 @@ reset_remote_dumps() {
 		IdentitiesOnly=yes -o StrictHostKeyChecking=no \
 		-o StrictHostKeyChecking=no '
 
-		$(declare -f) # transfers local function to remote host
+		'$(declare -f reset_local_dumps)'
 		reset_local_dumps '"$dump_dir"' '"$backup_level"'
 	'
 }
@@ -1446,20 +1478,22 @@ missed_remote_level0_backup() {
 	local expected_previous_backup_date=$(date -d \
 		"$(previous_scheduled_backup_date "$system_backup_freq")" +"%Y%m%d")
 
+	echo "missed_remote_level0_backup backup_dir: ${backup_dir}"
+	echo "missed_remote_level0_backup level0_backup_file: ${level0_backup_files}"
+	echo
+
 	local last_known_backup_date=$(ssh -q -F /dev/null "$user@$domain" \
 		-p "$port" -i "$ssh_key" -o IdentitiesOnly=yes \
 		-o StrictHostKeyChecking=no \
 		-o StrictHostKeyChecking=no '
 		
-		local known_backup_date
-
 		if ls -A '${level0_backup_files}' &> /dev/null ; then
-			local first_level0_backup_file="$(ls '${level0_backup_files}' \
-				| awk "FNR == 1 {print \$6}")"
+			first_level0_backup_file="$(ls '${level0_backup_files}' \
+				| awk "FNR == 1 {print \$1}")"
 
-				last_known_backup_date="$(date -d "$(ls -lFt --full-time \
-					"$first_level0_backup_file" \
-					| awk "FNR == 1 {print \$6}")" +"%Y%m%d")"
+			known_backup_date="$(date -d "$(ls -lFt --full-time \
+				"$first_level0_backup_file" \
+				| awk "FNR == 1 {print \$6}")" +"%Y%m%d")"
 
 		else
 			known_backup_date=0
@@ -1467,6 +1501,9 @@ missed_remote_level0_backup() {
 
 		echo "$known_backup_date"
 	')
+
+	echo "missed_remote_level0_backup first level0 file: $last_known_backup_date"
+	echo
 
 	if (( "$expected_previous_backup_date" > "$last_known_backup_date" ))
 	then
@@ -1481,14 +1518,18 @@ missed_remote_level0_backup() {
 # param File $2 -- The files containing the level0 backups
 missed_level0_backup() {
 	local backup_dir="$1" # relative path (systemdump/)
-	local level0_backup_files="$2"
+	local level0_backup_files=${2}
+
+
+	echo "missed_level0_backup level0_backup_files: ${level0_backup_files}"
+	echo
 
 	# local host
 	if ! yes_response \
 			"$remote_system_backup_only" \
 		&& missed_local_level0_backup \
 			"$local_host_backup_dir/$backup_dir" \
-			"$level0_backup_files"
+			${level0_backup_files}
 	then
 
 		return 0
@@ -1500,7 +1541,7 @@ missed_level0_backup() {
 		&& missed_remote_level0_backup \
 			${on_site_host_login_params[@]} \
 			"$on_site_host_backup_dir/$backup_dir" \
-			"$level0_backup_files"
+			${level0_backup_files}
 	then
 
 		return 0
@@ -1645,8 +1686,9 @@ create_snar_file() {
 	# Unless backup_level == 0, snar file should be created from the most recent
 	#     snar file previously created
 	if ! [[ "$backup_level" == "0" ]] ; then
-		local newest_snar="$(ls -t "$systemdump_dir/"*.snar \
-				| awk 'FNR == 1 {print $1}')"
+		local newest_snar="$(ls -t \
+			"$local_host_backup_dir/$systemdump_dir/"*.snar \
+			| awk 'FNR == 1 {print $1}')"
 
 		cp "$newest_snar" "$local_host_backup_dir/$snar_file"
 	
@@ -1908,7 +1950,10 @@ run_tar_command() {
 			$on_site_host_user@$on_site_host_domain \
 			-p $on_site_host_port -i $on_site_host_ssh_key \
 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-			'cat &> /media/odonata_farm.back/test/test.txt')"
+			'cat | split -d -b 1000m - \
+			'$on_site_host_backup_dir/$tar_file_prefix) "
+
+			# &> /media/odonata_farm.back/test/test.txt')"
 			# | split -d -b 1000m - \
 			# '$on_site_host_backup_dir/$tar_file_prefix) "
 
@@ -1945,6 +1990,10 @@ run_tar_command() {
 
 		# successful backup
 		return 0
+	
+	elif (( "$backup_ready" == 1 )) ; then
+		return 2 # configuration error or ssh connection error
+
 	fi
 	
 	return 1
@@ -2031,14 +2080,18 @@ move_backup() {
 
 	# on-site remote backup dirs
 	if yes_response "$on_site_host_ready" ; then
-		move_remote_backup ${on_site_host_login_params[@]} \
-			"$on_site_host_backup_dir/"${fs_obj} "$destination"
+		move_remote_backup \
+			${on_site_host_login_params[@]} \
+			"$on_site_host_backup_dir/"${fs_obj} \
+			"$on_site_host_backup_dir/$destination"
 	fi
 
 	# off-site remote backup dirs
 	if yes_response "$off_site_host_ready" ; then
-		create_remote_backup_dirs ${off_site_host_login_params[@]} \
-			"$off_site_host_backup_dir/"${fs_obj} "$destination"
+		move_remote_backup \
+			${off_site_host_login_params[@]} \
+			"$off_site_host_backup_dir/"${fs_obj} \
+			"$off_site_host_backup_dir/$destination"
 	fi
 }
 
@@ -2049,6 +2102,7 @@ perform_system_backup() {
 	local backup_level
 	local tar_file_prefix
 	local snar_file
+	local backup_status
 
 	# Create system backup directory
 	create_local_backup_dirs "$local_host_backup_dir" "$systemdump_dir"
@@ -2059,35 +2113,60 @@ perform_system_backup() {
 		&& backup_level=0 \
 		|| backup_level=$(backup_cycle_level)
 
+	echo "perform_system_backup backup_level: $backup_level"
+
 	# Backup file name
 	tar_file_prefix="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
 
 	# Backup already run today; prevent accidental overwrite
-	if backup_level_rerun "$systemdump_dir/$tar_file_prefix"* ; then
-		echo -n "System Backup Notice: level $backup_level already " \
-			>> "$log_file"
-		echo "successfully run today.  Terminating backup . . ." \
-			>> "$log_file"
-		return 1
-	fi
+	# if backup_level_rerun "$systemdump_dir/$tar_file_prefix"* ; then
+	# 	echo -n "System Backup Notice: level $backup_level already " \
+	# 		>> "$log_file"
+	# 	echo "successfully run today.  Terminating backup . . ." \
+	# 		>> "$log_file"
+	# 	return 1
+	# fi
+
+	echo
+	echo "printf before"
+	echo
 
 	# Backup ready to go, create snar file
 	local snar_file="$(create_snar_file "$backup_level" "$systemdump_dir" \
 		"$local_host_backup_dir")"
 
+	echo
+	echo "printf after"
+	echo
+
 	# perform backup
 	run_tar_command "$backup_level" "$systemdump_dir" \
 		"$snar_file" "$tar_file_prefix"
 
+	backup_status="$?"
+	echo "perform backup: backup_status: $backup_status"
+	echo
+
 	# Tar command unsuccessful
-	if (($? > 0)) ; then
+	if (($backup_status > 0)) ; then
 		rm "$snar_file"
 		remove_temp_backup "$systemdump_dir" "$tar_file_prefix"*
 
+		echo -n "System Backup Error: system backup terminated." >> "$log_file"
+
 		error_flag=1
 		email_body+=" - System backup\n"
+
+		if (($backup_status == 2)) ; then
+			echo "  Check remote server configurations and connection" \
+				>> "$log_file"
+		else
+			echo >> "$log_file"
+		fi
+
 		return 1
 	fi
+
 
 	# Tar successful
 	echo "System Backup Info:  performed level $backup_level backup" \

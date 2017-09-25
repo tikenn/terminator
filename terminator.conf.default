@@ -5,6 +5,15 @@
 # Licensed under the MIT License (http://opensource.org/licenses/MIT)
 ##
 
+# -------------- #
+# Log Management #
+# -------------- #
+
+# The number of log file to maintain
+# Default is 20
+log_file_rollover=
+
+
 # ---------------- #
 # Scheduling Setup #
 # ---------------- #
