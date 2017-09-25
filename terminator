@@ -1240,14 +1240,14 @@ backup_db() {
 	return 0
 }
 
-# # Only attempt database backup if database credentials in terminator.conf
-# if db_backup_requested ; then
-# 	backup_db
+# Only attempt database backup if database credentials in terminator.conf
+if db_backup_requested ; then
+	backup_db
 
-# else
-# 	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
-# 		>> "$log_file"
-# fi
+else
+	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
+		>> "$log_file"
+fi
 
 # End database section of log file
 echo >> "$log_file"
@@ -1404,23 +1404,6 @@ reset_dumps() {
 	fi
 }
 
-# # Resets system backup directory to cycle 0 or cycle 1 by deleting everything
-# #     after the respective cycle.  Preps for restart of differential backup 
-# #     cycle for next round of differential backups (this function needs to be renamed to something like backup_directory_restart or backup_directory_cycle_restart)
-# # param Int -- backup level
-# backup_cycle_reset() {
-# 	local backup_level="$1"
-
-# 	# Level 0 backups reset everything back to start
-# 	if [[ "$backup_level" == "0" ]] ; then
-# 		reset_dumps "$systemdump_dir"
-
-# 	# Level 1 backups reset back to after level 0 for cycling
-# 	elif [[ "$backup_level" == "1" ]] ; then
-# 		reset_dumps "$systemdump_dir" "0"
-# 	fi
-# }
-
 # Determines if a level 0 backup has been missed
 # param Dir $1 -- backup directory
 # param File $2 -- name of file that is supposed to contain level 0 backup
@@ -1562,114 +1545,6 @@ missed_level0_backup() {
 	return 1
 }
 
-# # creates a temporary ssh config file for scp option -3
-# # param File $1 -- location and name of file to create (full path)
-# # param host1_login_params
-# # param host2_login_params
-# create_ssh_config_file() {
-# 	local ssh_config_file="$1"
-# 	local domain="$2"
-# 	local port="$3"
-# 	local user="$4"
-# 	local ssh_key="$5"
-# 	local domain2="$6"
-# 	local port2="$7"
-# 	local user2="$8"
-# 	local ssh_key2="$9"
-
-# 	touch "$ssh_config_file"
-# 	echo "Host host1" >> "$ssh_config_file"
-# 	echo -e "\tHostName $domain" >> "$ssh_config_file"
-# 	echo -e "\tUser $user" >> "$ssh_config_file"
-# 	echo -e "\tPort $port" >> "$ssh_config_file"
-# 	echo -e "\tIdentityFile $ssh_key" >> "$ssh_config_file"
-# 	echo >> "$ssh_config_file"
-
-# 	echo "Host host2" >> "$ssh_config_file"
-# 	echo -e "\tHostName $domain2" >> "$ssh_config_file"
-# 	echo -e "\tUser $user2" >> "$ssh_config_file"
-# 	echo -e "\tPort $port2" >> "$ssh_config_file"
-# 	echo -e "\tIdentityFile $ssh_key2" >> "$ssh_config_file"
-# 	echo >> "$ssh_config_file"
-
-# 	echo "Host *" >> "$ssh_config_file"
-# 	echo -e "\tIdentitiesOnly yes" >> "$ssh_config_file"
-# 	echo -e "\tStrictHostKeyChecking no" >> "$ssh_config_file"
-# }
-
-# create_ssh_config_file "test_config" ${on_site_host_login_params[@]} ${off_site_host_login_params[@]}
-
-# # deletes the config file that was used
-# # param File $1 -- the file containing the ssh config to delete
-# delete_ssh_config_file() {
-# 	local ssh_config_file="$1"
-
-# 	rm "$ssh_config_file"
-# }
-
-# # Copies a missed level 0 backup from a host that has it to a host that doesn't
-# # param Array $1 -$4? -- Host to copy from
-# # param Array $5 - 8? -- Host to copy to
-# # param Files $9 -- set of level0 backup files
-# # param Dir $10 -- location to copy level0 backup to
-# copy_level0_to_missed_host() {
-# 	local domain
-# 	local port
-# 	local user
-# 	local ssh_key
-# 	local domain2
-# 	local port2
-# 	local user2
-# 	local ssh_key2
-# 	local level0_backup # full path and file pattern of level0 backup files (level0.tar.gz*)
-# 	local backup_location # full path
-
-# 	if [[ "$1" = "localhost" ]] ; then
-# 		domain="$2"
-# 		port="$3"
-# 		user="$4"
-# 		ssh_key="$5"
-# 		level0_backup=${6}
-# 		backup_location="$7"
-
-# 		scp -P "$port" -i "$ssh_key" -o IdentitiesOnly=no \
-# 			-o StrictHostKeyChecking=no \
-# 			${level0_backup} \
-# 			"$user@$domain:$backup_location"
-
-# 	elif [[ "$5" = "localhost" ]] ; then
-# 		domain="$1"
-# 		port="$2"
-# 		user="$3"
-# 		ssh_key="$4"
-# 		level0_backup=${6}
-# 		backup_location="$7"
-
-# 		scp -P "$port" -i "$ssh_key" -o IdentitiesOnly=no \
-# 			-o StrictHostKeyChecking=no \
-# 			"$user@$domain:"${level0_backup} \
-# 			"$backup_location"
-
-# 	else
-# 		domain="$1"
-# 		port="$2"
-# 		user="$3"
-# 		ssh_key="$4"
-# 		domain2="$5"
-# 		port2="$6"
-# 		user2="$7"
-# 		ssh_key2="$8"
-# 		level0_backup=${9}
-# 		backup_location="${10}"
-
-# 		ssh -q -F /dev/null "$user@$domain" -p "$port" -i "$ssh_key" \
-# 			-o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-# 			'scp -P '$port2' -i'
-
-
-# 	fi
-# }
-
 # Creates and names appropriate snar file based on backup_level and previous 
 #     one present
 # param Int $1 -- current backup level
@@ -1723,33 +1598,13 @@ projected_system_backup_size() {
 		--warning=none \
 		--listed-incremental="$temp_snar" \
 		--exclude="$systemdump_dir/*" --exclude="$systemdump_dir/*" \
-		--one-file-system /home/tikenn/Desktop/test | wc -c)"
+		--one-file-system / | wc -c)"
 
 	# Delete temporary snar file for checking remaining disk space for backup
 	rm "$temp_snar"
 
 	# Return
 	echo "$backup_size"
-}
-
-# Checks to see if a backup has already run today
-# param File $1 -- tar file that would have been created this day 
-#     (expects full path)
-backup_level_rerun() {
-	local tar_file=${1}
-
-	# check if backup level has already been run
-	# If blob expansion used, get first file
-	if ls ${tar_file} &> /dev/null && [[ "$(date -d "$(ls -lFt --full-time \
-		${tar_file} \
-		| awk 'FNR == 1 {print $6}')" +"%Y%m%d")" == "$(date +"%Y%m%d")" ]]
-		then
-
-		return 0
-	fi
-
-	# backup level not already run
-	return 1
 }
 
 # Calculates the remaining disk space available for system backup
@@ -1873,37 +1728,6 @@ remaining_remote_disk_space_ok() {
 	return 0
 }
 
-
-# # Runs the tar command that performs local system backup with error checking
-# # param Int $1 -- backup level to perform
-# # param Dir $2 -- local host backup dir where all backups are stored
-# # param Dir $3 -- systemdump dir where the system dumps are specifically stored
-# # param File $4 -- snar file to use for differential backups
-# # param File $5 -- tar file prefix to be used for split backup files
-# run_tar_command() {
-# 	local backup_level="$1"
-# 	local local_host_backup_dir="$2"
-# 	local systemdump_dir="$3"
-# 	local snar_file="$4"
-# 	local tar_file_prefix="$5"
-
-# 	# Perform system backup
-# 	# Command from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
-# 	tar cpz --listed-incremental="$snar_file" \
-# 		--exclude="$systemdump_dir/*" \
-# 		--one-file-system / 2>> "$log_file" \
-# 		| split -d -b 1000m - "$local_host_backup_dir/$tar_file_prefix"
-
-# 	# Backup was successful if no error status of previous command
-# 	if (( "${PIPESTATUS[0]}" <= 1 )) ; then
-
-# 		# successful backup
-# 		return 0
-# 	fi
-	
-# 	return 1
-# }
-
 # Formats the excluded directories in a proper format for tar command
 system_backup_location_exclusion() {
 	local exclude_string=""
@@ -1939,7 +1763,7 @@ run_tar_command() {
 	local tar_command="tar cpz --listed-incremental=$snar_file \
 		--exclude=$systemdump_dir/* \
 		$(system_backup_location_exclusion) \
-		--one-file-system /home/tikenn/Desktop/test 2>> $log_file | tee "
+		--one-file-system / 2>> $log_file | tee "
 
 	# local backup
 	if ! yes_response "$remote_system_backup_only" \
@@ -2008,6 +1832,9 @@ run_tar_command() {
 	return 1
 }
 
+# removes the local temporary backup if backup fails in the middle
+# param Dir $1 -- absolute path of system dump directory
+# param File $2 -- files containing backup
 remove_local_temp_backup() {
 	local backup_dir="$1" # absolute path
 	local backup_files=${2}
@@ -2015,6 +1842,13 @@ remove_local_temp_backup() {
 	rm "$backup_dir/"${backup_files}
 }
 
+# removes the remote temporary backups if backup fails in the middle
+# param String $1 -- place where the snapshot will be copied to
+# param String $2 -- relative db backup directory (mysqldump/daily)
+# param String $3 -- original file of database backup to perform the snapshot on
+# param String $4 -- most recent backup in chosen directory
+# param Dir $5 -- absolute path of system dump directory
+# param File $6 -- files containing backup
 remove_remote_temp_backup() {
 	local domain="$1"
 	local port="$2"
@@ -2031,6 +1865,9 @@ remove_remote_temp_backup() {
 	'
 }
 
+# removes the all temporary backup if backup fails in the middle
+# param Dir $1 -- absolute path of system dump directory
+# param File $2 -- files containing backup
 remove_temp_backup() {
 	local backup_dir="$1" # relative path
 	local backup_files=${2}
@@ -2127,15 +1964,6 @@ perform_system_backup() {
 	# Backup file name
 	tar_file_prefix="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
 
-	# Backup already run today; prevent accidental overwrite
-	# if backup_level_rerun "$systemdump_dir/$tar_file_prefix"* ; then
-	# 	echo -n "System Backup Notice: level $backup_level already " \
-	# 		>> "$log_file"
-	# 	echo "successfully run today.  Terminating backup . . ." \
-	# 		>> "$log_file"
-	# 	return 1
-	# fi
-
 	echo
 	echo "printf before"
 	echo
@@ -2190,200 +2018,6 @@ perform_system_backup() {
 perform_system_backup
 
 echo >> "$log_file"
-
-#Test:
-# error out tar command by setting to remote_only backups and no remote backups
-
-
-# ------------------------- #
-# Rsync with External Hosts #
-# ------------------------- #
-
-echo "# Remote Backups" >> "$log_file"
-
-# Sets the default scheduling for backup to remote hosts if not set by the user 
-#     or value is incorrectly entered
-# param Var (as string) $1 -- variable name passed as string
-# param String $2 -- default value to be set if variable not already set
-## Ex:  set_default_rsync_schedule "new_var" "new_value" --> new_var="new_value"
-set_default_rsync_schedule() {
-	local rsync_schedule="$1"
-	local default_value="$2"
-
-	# User set schedule variable correctly
-	if [[ -n ${!rsync_schedule} ]] && ( [[ ${!rsync_schedule} == "daily" ]] \
-		|| [[ ${!rsync_schedule} == "weekly" ]] \
-		|| [[ ${!rsync_schedule} == "monthly" ]] \
-		|| [[ ${!rsync_schedule} == "yearly" ]] ) ; then
-
-		return 0
-	
-	# User set variable incorrectly
-	elif [[ -n ${!rsync_schedule} ]] && ! [[ ${!rsync_schedule} == "daily" ]] \
-		&& ! [[ ${!rsync_schedule} == "weekly" ]] \
-		&& ! [[ ${!rsync_schedule} == "monthly" ]] \
-		&& ! [[ ${!rsync_schedule} == "yearly" ]] ; then
-	
-		# Notify user that default value being set for remote backup schedule
-		echo -n "Remote Backup Notice: " >> "$log_file"
-		echo -n "$rsync_schedule value not recognized; " >> "$log_file"
-		echo "setting to default of $default_value" >> "$log_file"
-	fi
-
-	# if variable not set or set incorrectly, set to default value
-	eval "$rsync_schedule"\="$default_value"
-	return 1
-}
-
-set_default_rsync_schedule "on_site_backup_freq" "daily"
-set_default_rsync_schedule "off_site_backup_freq" "monthly"
-
-# Create placeholder file on remote host for keeping track of schedule
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-create_placeholder() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-
-	ssh -q -F /dev/null "$user@$domain" -p "$port" \
-		-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-		-o StrictHostKeyChecking=no '
-		
-		# Create placeholder if it does not already exist
-		if ! [[ -f '"$backup_dir/"'placeholder ]] ; then
-			echo "DO NOT REMOVE!!!!" > '"$backup_dir/"'placeholder
-			echo -n "This is a placeholder file " >> '"$backup_dir/"'placeholder
-			echo -n "for tracking the backup " >> '"$backup_dir/"'placeholder
-			echo "schedule on this remote host." >> '"$backup_dir/"'placeholder
-		fi
-
-		# Change the date to current date for future reference
-		touch -d "$(date)" '"$backup_dir/"'placeholder
-	'
-}
-
-# Rsync command:  runs a general rsync command transferring backups to remote
-#     server
-# Excludes system file backups if remote-only backups are used
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-rsync_command() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-
-	rsync -az --partial --delete --filter="P placeholder" -e "ssh -F /dev/null -p $port -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" $local_host_backup_dir/ "$user@$domain:$backup_dir" 2>> "$log_file"
-
-	# Successful rsync command
-	if (( "$?" == 0 )) ; then
-		return 0
-	fi
-
-	# Unsuccessful rsync command
-	return 1
-}
-
-# Backups to remote hosts at user selected frequency (terminator.conf)
-# param String $1 -- domain name of host
-# param String $2 -- SSH port of host
-# param String $3 -- backup user of host
-# param String $4 -- host ssh key (no passphrase allowed)
-# param String $5 -- backup directory on remote host
-# param String $6 -- user selected schedule based on terminator.conf
-rsync_host() {
-	local domain="$1"
-	local port="$2"
-	local user="$3"
-	local ssh_key="$4"
-	local backup_dir="$5"
-	local backup_schedule="$6"
-
-	# Check remote host health for remote backup
-	if ! ssh_key_ok "$ssh_key" \
-		|| ! host_login_ok "$domain" "$port" "$user" "$ssh_key" \
-		|| ! backup_dir_ok "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
-		then
-
-		# something went wrong with the remote host, terminate rsync
-		return 1
-	fi
-
-	# If scheduled time for remote backup ready or remote backup missed
-	if scheduled_backup_date_reached "$backup_schedule" \
-		|| missed_remote_backup "$domain" "$port" "$user" "$ssh_key" \
-			"$backup_dir" "$(previous_scheduled_backup_date \
-			"$system_backup_freq")"
-		then
-
-		rsync_command "$domain" "$port" "$user" "$ssh_key" "$backup_dir"
-
-		if (( "$?" == 0 )) ; then
-			create_placeholder "$domain" "$port" "$user" "$ssh_key" \
-				"$backup_dir"
-
-			echo -n "Remote Backup Info: performed scheduled remote " \
-				>> "$log_file"
-			echo "host $domain" >> "$log_file"
-
-		else
-			echo -n "Remote Backup Error: scheduled remote backup to "\
-				>> "$log_file"
-			echo "$domain failed" \
-				>> "$log_file"
-
-			email_flag=1
-			email_body+=" - Remote backup to $domain\n"
-		fi
-	fi
-}
-
-# Performs actual rsync if requested
-perform_rsync() {
-	# On site host backup
-	if remote_backup_requested "$on_site_host_domain" "$on_site_host_port" \
-		"$on_site_host_user" "$on_site_host_ssh_key" "$on_site_host_backup_dir"
-	then
-		rsync_host "$on_site_host_domain" "$on_site_host_port" \
-			"$on_site_host_user" "$on_site_host_ssh_key" \
-			"$on_site_host_backup_dir" "$on_site_backup_freq"
-
-	else
-		echo -n "Remote Backup Notice: no on-site host login parameters.  " \
-			>> "$log_file"
-		echo "Skipping . . . " >> "$log_file"
-
-	fi
-
-	# Off site host backup
-	if remote_backup_requested "$off_site_host_domain" "$off_site_host_port" \
-		"$off_site_host_user" "$off_site_host_ssh_key" "$off_site_host_backup_dir"
-	then
-		rsync_host "$off_site_host_domain" "$off_site_host_port" \
-			"$off_site_host_user" "$off_site_host_ssh_key" \
-			"$off_site_host_backup_dir" "$off_site_backup_freq"
-
-	# No external hosts
-	else
-		echo -n "Remote Backup Notice: no off-site host login parameters.  " \
-			>> "$log_file"
-		echo "Skipping . . . " >> "$log_file"
-	fi
-}
-
-# Only perform an rsync if local backup is allowed
-# If local backup is not allowed the systems above will take care of the remote part as well
-# [[ "$remote_system_backup_only" = "no" ]] && perform_rsync
 
 # Email if any errors in the program
 email_errors "$email_body" "$error_flag"
