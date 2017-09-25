@@ -710,15 +710,24 @@ echo "off-site host status: $off_site_host_ready"
 # on-site host ready status and errors
 if yes_response "$on_site_host_ready" ; then
 	echo "On-site Host Info: ready" >> "$log_file"
-else
+
+elif remote_backup_requested \
+		${on_site_host_login_params} \
+		"$on_site_host_backup_dir"
+then
 	error_flag=1
 	email_body+=" - On-site Remote System\n"
 fi
 
+
 # off-site host ready status and errors
 if yes_response "$off_site_host_ready" ; then
 	echo "Off-site Host Info: ready" >> "$log_file"
-else
+
+elif remote_backup_requested \
+		${off_site_host_login_params} \
+		"$off_site_host_backup_dir"
+then
 	error_flag=1
 	email_body+=" - Off-site Remote System\n"
 fi
