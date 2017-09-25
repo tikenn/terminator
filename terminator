@@ -1595,7 +1595,8 @@ create_snar_file() {
 			"$local_host_backup_dir/$systemdump_dir/"*.snar \
 			| awk 'FNR == 1 {print $1}')"
 
-		cp "$newest_snar" "$local_host_backup_dir/$snar_file"
+		cp "$local_host_backup_dir/$systemdump_dir/$newest_snar" \
+			"$local_host_backup_dir/$snar_file"
 	
 	# Level 0 snar files should start over
 	else
