@@ -1580,13 +1580,19 @@ missed_level0_backup() {
 # param Int $1 -- current backup level
 # param Dir $2 -- directory of previous snar files from past backups
 # param Dir $3 -- temporary directory to store snar till backup finalized
+# param String $4 -- custom file name (optional parameter)
 # return String -- name of snar file created
 create_snar_file() {
 	local backup_level="$1"
 	local systemdump_dir="$2"
 	local local_host_backup_dir="$3"
+	local snar_file
 
-	local snar_file="$HOSTNAME.systemdump.level_$backup_level.snar"
+	if [[ -n "$4" ]] ; then
+		snar_file="$4"
+	else
+		snar_file="$HOSTNAME.systemdump.level_$backup_level.snar"
+	fi
 
 	# Unless backup_level == 0, snar file should be created from the most recent
 	#     snar file previously created
@@ -1620,7 +1626,7 @@ projected_system_backup_size() {
 
 	# Create temp snar file for checking backup disk size from original
 	temp_snar=$(create_snar_file "$backup_level" "$systemdump_dir" \
-		"$local_host_backup_dir")
+		"$local_host_backup_dir" "temp_snar.snar")
 
 	# Projected backup size of tar backup
 	# Note that all previous backups must be included in the incremental to
@@ -1630,7 +1636,7 @@ projected_system_backup_size() {
 		--listed-incremental="$temp_snar" \
 		--exclude="$local_host_backup_dir/$systemdump_dir/*" \
 		$(system_backup_location_exclusion) \
-		--one-file-system /home/tikenn/Desktop/test | wc -c)"
+		--one-file-system / | wc -c)"
 
 	# echo "shutdown"
 	# echo
@@ -1786,7 +1792,7 @@ run_tar_command() {
 	local snar_file="$3"
 	local tar_file_prefix="$4"
 	local projected_backup_size="$5"
-	
+
 	local backup_ready=1
 	local status
 
@@ -1802,7 +1808,7 @@ run_tar_command() {
 	local tar_command="tar cpz --listed-incremental=$snar_file \
 		--exclude=$local_host_backup_dir/$systemdump_dir/* \
 		$(system_backup_location_exclusion) \
-		--one-file-system /home/tikenn/Desktop/test 2>> $log_file | tee "
+		--one-file-system / 2>> $log_file | tee "
 
 	# local backup
 	if ! yes_response "$remote_system_backup_only" \
