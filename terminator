@@ -109,30 +109,30 @@ email_errors() {
 # Automagic Updates #
 # ----------------- #
 
-# # Update
-# # echo "updating"
-# echo "# apt-get update" >> "$log_file"
-# apt-get update &>> "$log_file"
-# echo >> "$log_file"
+# Update
+# echo "updating"
+echo "# apt-get update" >> "$log_file"
+apt-get update &>> "$log_file"
+echo >> "$log_file"
 
-# # Upgrade
-# # echo "upgrading"
-# echo "# apt-get full-upgrade" >> "$log_file"
-# apt-get -y upgrade &>> "$log_file"
-# echo >> "$log_file"
+# Upgrade
+# echo "upgrading"
+echo "# apt-get full-upgrade" >> "$log_file"
+apt-get -y upgrade &>> "$log_file"
+echo >> "$log_file"
 
-# # Clean
-# # echo "cleaning"
-# echo "# apt-get clean" >> "$log_file"
-# apt-get -y clean &>> "$log_file"
-# echo >> "$log_file"
+# Clean
+# echo "cleaning"
+echo "# apt-get clean" >> "$log_file"
+apt-get -y clean &>> "$log_file"
+echo >> "$log_file"
 
-# # If errors with update and upgrade, set error_flag for email and add error to 
-# #     email body
-# if grep -q "E: \|W: " "$log_file" ; then
-# 	error_flag=1
-# 	email_body+=" - System update and upgrade\n"
-# fi
+# If errors with update and upgrade, set error_flag for email and add error to 
+#     email body
+if grep -q "E: \|W: " "$log_file" ; then
+	error_flag=1
+	email_body+=" - System update and upgrade\n"
+fi
 
 
 # ----------------- #
@@ -1595,7 +1595,7 @@ create_snar_file() {
 			"$local_host_backup_dir/$systemdump_dir/"*.snar \
 			| awk 'FNR == 1 {print $1}')"
 
-		cp "$local_host_backup_dir/$systemdump_dir/$newest_snar" \
+		cp "$newest_snar" \
 			"$local_host_backup_dir/$snar_file"
 	
 	# Level 0 snar files should start over
@@ -1630,8 +1630,11 @@ projected_system_backup_size() {
 		--listed-incremental="$temp_snar" \
 		--exclude="$local_host_backup_dir/$systemdump_dir/*" \
 		$(system_backup_location_exclusion) \
-		--one-file-system / | wc -c)"
+		--one-file-system /home/tikenn/Desktop/test | wc -c)"
 
+	# echo "shutdown"
+	# echo
+	# return
 	# Delete temporary snar file for checking remaining disk space for backup
 	rm "$temp_snar"
 
@@ -1782,20 +1785,24 @@ run_tar_command() {
 	local systemdump_dir="$2" # relative path
 	local snar_file="$3"
 	local tar_file_prefix="$4"
-
-	local projected_backup_size="$(projected_system_backup_size \
-		"$backup_level" "$systemdump_dir")"
+	local projected_backup_size="$5"
+	
 	local backup_ready=1
 	local status
 
 	echo "run_tar_command projected backup size: $projected_backup_size"
 	echo
 	
+	# snar_file="$local_host_backup_dir/$systemdump_dir/anobiidae.systemdump.level_0.snar"
+
+	echo "run_tar_command snar file: $(ls $snar_file)"
+	echo
+
 	# Command modded from:  https://help.ubuntu.com/community/BackupYourSystem/TAR
 	local tar_command="tar cpz --listed-incremental=$snar_file \
 		--exclude=$local_host_backup_dir/$systemdump_dir/* \
 		$(system_backup_location_exclusion) \
-		--one-file-system / 2>> $log_file | tee "
+		--one-file-system /home/tikenn/Desktop/test 2>> $log_file | tee "
 
 	# local backup
 	if ! yes_response "$remote_system_backup_only" \
@@ -1981,6 +1988,7 @@ perform_system_backup() {
 	local tar_file_prefix
 	local snar_file
 	local backup_status
+	local projected_backup_size
 
 	# Create system backup directory
 	create_local_backup_dirs "$local_host_backup_dir" "$systemdump_dir"
@@ -1993,24 +2001,21 @@ perform_system_backup() {
 
 	echo "perform_system_backup backup_level: $backup_level"
 
+	# Determine projected backup size (has to occur BEFORE creating 
+	#     permanent snar file)
+	projected_backup_size="$(projected_system_backup_size \
+			"$backup_level" "$systemdump_dir")"
+
 	# Backup file name
 	tar_file_prefix="$HOSTNAME.systemdump.level_$backup_level.tar.gz"
 
-	echo
-	echo "printf before"
-	echo
-
 	# Backup ready to go, create snar file
-	local snar_file="$(create_snar_file "$backup_level" "$systemdump_dir" \
+	snar_file="$(create_snar_file "$backup_level" "$systemdump_dir" \
 		"$local_host_backup_dir")"
-
-	echo
-	echo "printf after"
-	echo
 
 	# perform backup
 	run_tar_command "$backup_level" "$systemdump_dir" \
-		"$snar_file" "$tar_file_prefix"
+		"$snar_file" "$tar_file_prefix" "$projected_backup_size"
 
 	backup_status="$?"
 	echo "perform backup: backup_status: $backup_status"
