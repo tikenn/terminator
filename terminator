@@ -1630,7 +1630,7 @@ projected_system_backup_size() {
 		--listed-incremental="$temp_snar" \
 		--exclude="$local_host_backup_dir/$systemdump_dir/*" \
 		$(system_backup_location_exclusion) \
-		--one-file-system /home/tikenn/Desktop/test | wc -c)"
+		--one-file-system / | wc -c)"
 
 	# echo "shutdown"
 	# echo
@@ -1802,7 +1802,7 @@ run_tar_command() {
 	local tar_command="tar cpz --listed-incremental=$snar_file \
 		--exclude=$local_host_backup_dir/$systemdump_dir/* \
 		$(system_backup_location_exclusion) \
-		--one-file-system /home/tikenn/Desktop/test 2>> $log_file | tee "
+		--one-file-system / 2>> $log_file | tee "
 
 	# local backup
 	if ! yes_response "$remote_system_backup_only" \
