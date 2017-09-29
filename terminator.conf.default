@@ -44,18 +44,6 @@ yearly_db_backup_rollover=
 # Default value is "weekly"
 system_backup_freq=
 
-# Frequency of backup to on site backup location
-# Can take the values: "daily", "weekly", "monthly", or "yearly"
-# Default value is "daily"
-# Not used if On-site Host section not filled out
-on_site_backup_freq=
-
-# Frequency of backup to off site backup location
-# Can take the values: "daily", "weekly", "monthly", or "yearly"
-# Default value is "monthly"
-# Not used if Off-site Host section not filled out
-off_site_backup_freq=
-
 
 # ------------------- #
 # Administrator Setup #
