@@ -277,7 +277,12 @@ Please note that this is a MySQL-specific protocol
 
     `mkdir /proc /sys /mnt /media`
 
-5. If database restore is necessary, use the most recent file in $BACKUP_DIR/mysqldump with the following command:
+5. (optional) Fixing the `/etc/fstab` file, a process that might be necessary if the operating system identifies the boot partition by UUID
+    1. Reboot the system
+    2. Run `sudo blkid` to identify the name and UUID of the boot partition (usually `/dev/sda1`)
+    3. Open `/etc/fstab` and change the boot partition (typically identified through a comment above the appropriate line and normally an `ext2` file system on Ubuntu)
+
+6. (optional) If database restore is necessary, use the most recent file in $BACKUP_DIR/mysqldump with the following command:
 
     `mysql -u root -p --all-databases < backup.sql`
 
