@@ -109,23 +109,23 @@ email_errors() {
 # Automagic Updates #
 # ----------------- #
 
-# # Update
-# # echo "updating"
-# echo "# apt-get update" >> "$log_file"
-# apt-get update &>> "$log_file"
-# echo >> "$log_file"
+# Update
+# echo "updating"
+echo "# apt-get update" >> "$log_file"
+apt-get update &>> "$log_file"
+echo >> "$log_file"
 
-# # Upgrade
-# # echo "upgrading"
-# echo "# apt-get full-upgrade" >> "$log_file"
-# apt-get -y upgrade &>> "$log_file"
-# echo >> "$log_file"
+# Upgrade
+# echo "upgrading"
+echo "# apt-get full-upgrade" >> "$log_file"
+apt-get -y upgrade &>> "$log_file"
+echo >> "$log_file"
 
-# # Clean
-# # echo "cleaning"
-# echo "# apt-get clean" >> "$log_file"
-# apt-get -y clean &>> "$log_file"
-# echo >> "$log_file"
+# Clean
+# echo "cleaning"
+echo "# apt-get clean" >> "$log_file"
+apt-get -y clean &>> "$log_file"
+echo >> "$log_file"
 
 # If errors with update and upgrade, set error_flag for email and add error to 
 #     email body
@@ -1271,13 +1271,13 @@ backup_db() {
 }
 
 # Only attempt database backup if database credentials in terminator.conf
-# if db_backup_requested ; then
-# 	backup_db
+if db_backup_requested ; then
+	backup_db
 
-# else
-# 	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
-# 		>> "$log_file"
-# fi
+else
+	echo "DB Backup Notice:  no database credentials set.  Skipping . . ." \
+		>> "$log_file"
+fi
 
 # End database section of log file
 echo >> "$log_file"
