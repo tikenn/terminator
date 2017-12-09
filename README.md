@@ -1,5 +1,5 @@
 # Terminator
-Backup and system maintenance for Debian-based systems and MySQL style databases.    It logs everything and only emails when something goes wrong.
+Backup and system maintenance for Debian-based systems and MySQL style databases.  It logs everything and only emails when something goes wrong.
 
 ## Quicklinks
 - [Features](#features)
@@ -233,10 +233,15 @@ Terminator provides two methods of modifying the backup behavior.  Both of the o
 - **Options**: `yes` or `no`
 - **Default Value**: `no` (keep local copy)
 
+`system_backup_files`
+- **Description**: bash array \[`("/path/1" "/path/2")`\] of directories/files (absolute paths) for system to backup
+- **Options**: absolute paths in bash array
+- **Default Value**: ("/") (bash array backing up whole system)
+
 `system_backup_freq`
 - **Description**: determines how often a level 0 backup (full system backup) should be made
 - **Options**: `daily`, `weekly`, `monthly`, `yearly`
-- **Default Value**: 
+- **Default Value**: `weekly`
 
 `system_backup_ignore_list`
 - **Description**: bash array \[`("path/1" "path/2" "path/3")`\] of locations (absolute paths) system backup should ignore
