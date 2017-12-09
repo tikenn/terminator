@@ -65,9 +65,15 @@ mailto=
 # Default value is "no"
 remote_system_backup_only=
 
+# Sets the files to be backed up; if not set, terminator will back up root (/)
+# Formatted as a bash array --> ("/path/to/dir1" "/path/to/dir2")
+# Requires ABSOLUTE PATH
+# Defaults to backing up entire system
+system_backup_files=()
+
 # Setting to ignore specific locations (directories or files) during the system
 #     backup
-# Formatted as a bash array --> ("path/to/dir1" "path/to/dir2")
+# Formatted as a bash array --> ("/path/to/dir1" "/path/to/dir2")
 # Requires ABSOLUTE PATH
 # Defaults to empty, backing up entire system
 system_backup_ignore_list=()
