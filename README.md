@@ -98,7 +98,7 @@ Terminator provides two methods of modifying the backup behavior.  Both of the o
  - Database and remote backup host parameters need to be set in order to take advantage of them
 
 ## Programs Used
-- Updates: `aptitude`
+- Updates: `apt-get`
 - Database backups:  `mysqldump`
 - System backups:  `tar` and `split`
 
