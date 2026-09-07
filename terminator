@@ -1791,6 +1791,22 @@ remaining_remote_disk_space_ok() {
 # Formats the excluded directories in a proper format for tar command
 system_backup_location_exclusion() {
 	local exclude_string=""
+	local permanent_directory_exclusion_list=(
+	    "/proc"
+    	"/sys"
+    	"/dev"
+    	"/run"
+    	"/tmp"
+    	"/mnt"
+    	"/media"
+    	"/lost+found"
+		"/etc/machine-id"
+		"$install_location/backups"
+	)
+	for dir in ${permanent_directory_exclusion_list[@]} ; do
+		exclude_string+="--exclude=$dir "
+	done
+
 	if [[ -n "$system_backup_ignore_list" ]] ; then
 		for location in ${system_backup_ignore_list[@]} ; do
 			exclude_string+="--exclude=$location "
@@ -2077,7 +2093,9 @@ perform_system_backup() {
 	return 0
 }
 
-perform_system_backup
+# perform_system_backup
+
+system_backup_location_exclusion
 
 echo >> "$log_file"
 
