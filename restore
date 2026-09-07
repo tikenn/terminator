@@ -10,8 +10,35 @@ list_backup_levels() {
 
 }
 
+# Creates a finalized list of locations to exclude on system restoration
+#   (presumably through user interaction)
+#   (note:  must be called as follows: 
+#               local final_list=();
+#               create_final_location_exclusion_list location_list final_list'
+#   )
+# param ArrayRef $1 -- array of suggested exclusion locations
+# param ArrayRef $2 -- externally named return variable to contain returned array
+# return String[]
+create_final_location_exclusion_list() {
+    local -n _location_list=$1
+    local -n _returns=$2
+
+}
+
+# Creates the string for tar to exclude locations on restore
+# param String[] $1 -- array of directories to exclude
+# return String
+create_exclude_string() {
+    local location_list=("$@")
+    
+    local exclusion_string=""
+
+    echo ${exclusion_string}
+}
+
 # Restores a backup from archive
-# param String 
+# param 
+# return null
 restore() {
     tar -xzf backup.tar.gz \
         --exclude='etc/fstab' \
