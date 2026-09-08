@@ -6,15 +6,54 @@
 ##
 
 # 
-list_backup_levels() {
+# list_backup_levels() {
 
+# }
+
+# Checks string for comma-separated list without spaces
+# param ArrayRef $1 -- user-enetered string of comma-separated numbers
+# returns Bool
+validate_numerical_list() {
+    local string="$1"
+
+    # validate comma-separated list without spaces
+    if [[ $string =~ ^[0-9]+(,[0-9])*$ ]] ; then
+        return 0
+    else
+        return 1
+    fi
 }
+
+# Acquire user list of dirs to exclude
+# param ArrayRef $1 -- array of suggested exclusion locations
+
+# return String
+acquire_user_exclusion_dirs() {
+    local -n _location_list=$1
+    local -n _returns=$2
+
+    local input_string='invalid string'
+
+    echo "Default list of locations to exclude on restore"
+
+    # need to iterate through _location_list
+
+    while ! validate_numerical_list "$input_string" ; do
+        read -rp "Selection: " input_string
+
+        if ! validate_numerical_list "$input_string" ; then
+            echo "Invalid input"
+            echo "Please enter a comma-separated list without spaces"
+        fi
+    done
+}
+
 
 # Creates a finalized list of locations to exclude on system restoration
 #   (presumably through user interaction)
 #   (note:  must be called as follows: 
 #               local final_list=();
-#               create_final_location_exclusion_list location_list final_list'
+#               create_final_location_exclusion_list location_list final_list
 #   )
 # param ArrayRef $1 -- array of suggested exclusion locations
 # param ArrayRef $2 -- externally named return variable to contain returned array
@@ -26,14 +65,21 @@ create_final_location_exclusion_list() {
 }
 
 # Creates the string for tar to exclude locations on restore
-# param String[] $1 -- array of directories to exclude
+#   (note:  must be called as follows: 
+#               local location_list=();
+#               $(create_exclude_string location_list)
+#   )
+# param ArrayRef $1 -- array of directories to exclude
 # return String
 create_exclude_string() {
-    local location_list=("$@")
-    
+    local -n _location_list=$1
     local exclusion_string=""
 
-    echo ${exclusion_string}
+    for location in "${_location_list[@]}" ; do
+        exclude_string+="--exclude ${location} "
+    done
+
+    echo "${exclude_string}"
 }
 
 # Restores a backup from archive
@@ -46,3 +92,12 @@ restore() {
         --exclude='etc/netplan/*' \
         -C /
 }
+
+string="11,2,3"
+echo "Valid:" $(if validate_numerical_list "$string"; then echo "valid"; else echo "invalid"; fi)
+
+string="11, 2, 3"
+echo "Valid:" $(if validate_numerical_list "$string"; then echo "valid"; else echo "invalid"; fi)
+
+string="a, 1"
+echo "Invalid:" $(if validate_numerical_list "$string"; then echo "valid"; else echo "invalid"; fi)

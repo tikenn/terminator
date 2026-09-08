@@ -1803,12 +1803,12 @@ system_backup_location_exclusion() {
 		"/etc/machine-id"
 		"$install_location/backups"
 	)
-	for dir in ${permanent_directory_exclusion_list[@]} ; do
+	for dir in "${permanent_directory_exclusion_list[@]}" ; do
 		exclude_string+="--exclude=$dir "
 	done
 
 	if [[ -n "$system_backup_ignore_list" ]] ; then
-		for location in ${system_backup_ignore_list[@]} ; do
+		for location in "${system_backup_ignore_list[@]}" ; do
 			exclude_string+="--exclude=$location "
 		done
 	fi
