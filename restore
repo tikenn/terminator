@@ -5,6 +5,33 @@
 # Licensed under the MIT License (http://opensource.org/licenses/MIT)
 ##
 
+# Default list of directories to exclude from system restoration
+default_restoration_exclusion_list=(
+    "etc/fstab"
+    "etc/hostname"
+    "etc/hosts"
+    "etc/netplan/"
+    "etc/default/grub"
+    "etc/initramfs-tools/"
+)
+
+# Checks if an element is an array
+# param ArrayRef $1 -- array to check for a value
+# param Any $2 -- value to verify if in provided array
+# returns Bool
+array_contains() {
+    local -n _array=$1
+    local search_value=$2
+
+    for value in "${_array[@]}" ; do
+        if [[ "$search_value" == "$value" ]] ; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 # 
 # list_backup_levels() {
 
@@ -26,24 +53,41 @@ validate_numerical_list() {
 
 # Acquire user list of dirs to exclude
 # param ArrayRef $1 -- array of suggested exclusion locations
-
-# return String
+# return ArrayRef $2 -- array of locations to exclude on system restoration
 acquire_user_exclusion_dirs() {
     local -n _location_list=$1
     local -n _returns=$2
 
     local input_string='invalid string'
+    # local exclusion_array=()
 
-    echo "Default list of locations to exclude on restore"
+    echo "List of locations to exclude on restore"
 
-    # need to iterate through _location_list
+    # Iterate through location list and list them numerically
+    for (( i = 0; i < ${#_location_list[@]}; i++ )) ; do
+        echo $((i + 1)). "/"${_location_list[$i]}
 
+    done
+
+    echo
+    echo "Please list the numbers of the directories to remove from this list"
+
+    # Acquire list of locations to remove from restoration exclusion list from user
     while ! validate_numerical_list "$input_string" ; do
         read -rp "Selection: " input_string
 
         if ! validate_numerical_list "$input_string" ; then
+            echo
             echo "Invalid input"
             echo "Please enter a comma-separated list without spaces"
+        fi
+    done
+    
+    # removes user-selected locations from the location exlusion array
+    IFS="," read -ra exclusion_array <<< "$input_string"
+    for (( i = 0; i < ${#_location_list[@]}; i++ )) ; do
+        if ! array_contains exclusion_array "$((i + 1))" ; then
+            _returns+=("${_location_list[$i]}")
         fi
     done
 }
@@ -56,8 +100,7 @@ acquire_user_exclusion_dirs() {
 #               create_final_location_exclusion_list location_list final_list
 #   )
 # param ArrayRef $1 -- array of suggested exclusion locations
-# param ArrayRef $2 -- externally named return variable to contain returned array
-# return String[]
+# return ArrayRef $2 -- externally named return variable to contain returned array
 create_final_location_exclusion_list() {
     local -n _location_list=$1
     local -n _returns=$2
@@ -93,11 +136,6 @@ restore() {
         -C /
 }
 
-string="11,2,3"
-echo "Valid:" $(if validate_numerical_list "$string"; then echo "valid"; else echo "invalid"; fi)
+acquire_user_exclusion_dirs default_restoration_exclusion_list test
 
-string="11, 2, 3"
-echo "Valid:" $(if validate_numerical_list "$string"; then echo "valid"; else echo "invalid"; fi)
-
-string="a, 1"
-echo "Invalid:" $(if validate_numerical_list "$string"; then echo "valid"; else echo "invalid"; fi)
+echo "${test[@]}"

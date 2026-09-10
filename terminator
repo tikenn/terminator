@@ -1801,6 +1801,7 @@ system_backup_location_exclusion() {
     	"/media"
     	"/lost+found"
 		"/etc/machine-id"
+		"/boot"
 		"$install_location/backups"
 	)
 	for dir in "${permanent_directory_exclusion_list[@]}" ; do
