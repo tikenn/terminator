@@ -5,7 +5,47 @@
 # Licensed under the MIT License (http://opensource.org/licenses/MIT)
 ##
 
+##########################
+# Array ref and function #
+##########################
+# This script uses bash references (local -n | declare -n) to simplify passing arrays
+# Unfortunately, bash uses dynamic variable scopes, making circular refs easy to create
+# To avoid this problem, the following convention in funcs has been created:
+#   local array_name=$1 # the NAME of the reference
+#   local -n _array=$array_name # the REFERENCE itself
+#
+# array_name:  can easily be passed to other internal functions without creating 
+#   a circular reference
+# 
+# _array:  can be used locally inside the function to access the ref contents
+
+# Since this is a restore, I am going to assume that the curent working 
+#   directory is good enough for an install location
+install_location=$(pwd)
+
+# Create log directory if not exists
+if ! [[ -d "$install_location/log" ]] ; then
+	mkdir "$install_location/log"
+fi
+
+# Set up log file
+log_file="$install_location/log/$HOSTNAME.$(date +"%F_%T").log"
+touch "$log_file"
+
+# Check for terminator.conf file
+if ! [[ -f "$install_location/terminator.conf" ]] ; then
+	echo "# System check" >> "$log_file"
+	echo "E: could not find 'terminator.conf'.  Please run 'setup'" >> \
+		"$log_file"
+
+	exit 1
+fi
+
+# Load in user configurations
+. "$install_location/terminator.conf"
+
 # Default list of directories to exclude from system restoration
+# Note the removal of working directory, which is assumed to be the installation location
 default_restoration_exclusion_list=(
     "etc/fstab"
     "etc/hostname"
@@ -13,6 +53,7 @@ default_restoration_exclusion_list=(
     "etc/netplan/"
     "etc/default/grub"
     "etc/initramfs-tools/"
+    "${PWD#/}"
 )
 
 # Checks if an element is an array
@@ -20,7 +61,8 @@ default_restoration_exclusion_list=(
 # param Any $2 -- value to verify if in provided array
 # returns Bool
 array_contains() {
-    local -n _array=$1
+    local array_name=$1
+    local -n _array=$array_name
     local search_value=$2
 
     for value in "${_array[@]}" ; do
@@ -31,11 +73,6 @@ array_contains() {
 
     return 1
 }
-
-# 
-# list_backup_levels() {
-
-# }
 
 # Checks string for comma-separated list without spaces
 # param ArrayRef $1 -- user-enetered string of comma-separated numbers
@@ -51,15 +88,54 @@ validate_numerical_list() {
     fi
 }
 
+# Creates an ssh connection that can take a command to pass to the remote host
+#   No params, this function wraps the global parameters in the terminator.conf file
+local_remote_ssh() {
+    ssh -q -F /dev/null \
+        -p "$on_site_host_port" \
+        -i "$on_site_host_ssh_key" \
+        -o IdentitiesOnly=yes \
+        -o StrictHostKeyChecking=no \
+        -o ConnectTimeout=10 \
+        "$on_site_host_user@$on_site_host_domain" \
+        "$@"
+}
+
+# Acquires an array of backup levels that exist in the systemdump files
+#   on a remote host
+# param String $1 - backup location
+# return ArrayRef $2 - list of backup levels
+list_backup_levels() {
+    local backup_location=$1
+    local -n _return=$2
+    local backup_level=""
+
+    while IFS= read -r file ; do
+        backup_level=${file#*level_}
+        backup_level=${backup_level%%.*}
+        backup_list_full_list+=("${backup_level}")
+    done < <(
+        local_remote_ssh ls -1 "$backup_location"
+    )
+
+    # mapfile turns the list of items with line-break delimiters back into an array
+    # remember that <(...) processes the output of a command into a std file output
+    # mapfile requires a file input
+    mapfile -t _return < <(
+        printf "%s\n" "${backup_list_full_list[@]}" | sort -nu
+    )
+}
+
 # Acquire user list of dirs to exclude
 # param ArrayRef $1 -- array of suggested exclusion locations
 # return ArrayRef $2 -- array of locations to exclude on system restoration
 acquire_user_exclusion_dirs() {
-    local -n _location_list=$1
-    local -n _returns=$2
+    local location_list_name=$1
+    local -n _location_list=$location_list_name
+    local -n _return=$2
 
     local input_string='invalid string'
-    # local exclusion_array=()
+    local exclusion_array=()
 
     echo "List of locations to exclude on restore"
 
@@ -87,24 +163,9 @@ acquire_user_exclusion_dirs() {
     IFS="," read -ra exclusion_array <<< "$input_string"
     for (( i = 0; i < ${#_location_list[@]}; i++ )) ; do
         if ! array_contains exclusion_array "$((i + 1))" ; then
-            _returns+=("${_location_list[$i]}")
+            _return+=("${_location_list[$i]}")
         fi
     done
-}
-
-
-# Creates a finalized list of locations to exclude on system restoration
-#   (presumably through user interaction)
-#   (note:  must be called as follows: 
-#               local final_list=();
-#               create_final_location_exclusion_list location_list final_list
-#   )
-# param ArrayRef $1 -- array of suggested exclusion locations
-# return ArrayRef $2 -- externally named return variable to contain returned array
-create_final_location_exclusion_list() {
-    local -n _location_list=$1
-    local -n _returns=$2
-
 }
 
 # Creates the string for tar to exclude locations on restore
@@ -115,7 +176,8 @@ create_final_location_exclusion_list() {
 # param ArrayRef $1 -- array of directories to exclude
 # return String
 create_exclude_string() {
-    local -n _location_list=$1
+    local location_list_name=$1
+    local -n _location_list=$location_list_name
     local exclusion_string=""
 
     for location in "${_location_list[@]}" ; do
@@ -126,16 +188,32 @@ create_exclude_string() {
 }
 
 # Restores a backup from archive
-# param 
+# param ArrayRef $1 -- array of suggested directories to exclude on restore
 # return null
 restore() {
-    tar -xzf backup.tar.gz \
-        --exclude='etc/fstab' \
-        --exclude='etc/machine-id' \
-        --exclude='etc/netplan/*' \
-        -C /
+    local location_list_name=$1
+    local -n _location_list=$location_list_name
+
+    local final_location_list=()
+    local exclusion_string=""
+    local backup_location=$on_site_host_backup_dir"/systemdump/"
+    local backup_levels=()
+
+    acquire_user_exclusion_dirs "$location_list_name" final_location_list
+    exclusion_string="$(create_exclude_string final_location_list)"
+
+    list_backup_levels "$backup_location" backup_levels
+    for backup_level in "${backup_levels[@]}" ; do
+        local remote_backup="${backup_location}*.level_${backup_level}.tar.gz*"
+        # local_remote_ssh "ls -1 $remote_backup"
+        # local_remote_ssh cat "$remote_backup" | \
+        #     tar tzpvf - -C / \
+        #         --numeric-owner \
+        #         "$exclusion_string"
+    done
 }
 
-acquire_user_exclusion_dirs default_restoration_exclusion_list test
-
-echo "${test[@]}"
+# restore default_restoration_exclusion_list
+restore default_restoration_exclusion_list
+# list_backup_levels './backups/systemdump' test
+# echo ${test[@]}
