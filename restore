@@ -197,43 +197,6 @@ create_exclude_array() {
     done
 }
 
-# Acquires the most recent OS info of the backed up system to compare to the
-#   on which the restoration is taking place
-# param String $1 -- location of the backup
-# return String -- the os info 
-acquire_backup_os_info() {
-    local backup_location=$1
-    local backup_levels=()
-    local remote_backup=""
-
-    list_backup_levels "$backup_location" backup_levels
-    for (( i = ${#backup_levels[@]} - 1; i >= 0; i-- )) ; do 
-        backup_level="${backup_levels[i]}"
-        remote_backup="${backup_location}*.level_${backup_level}.tar.gz*"
-        echo $i
-        # local_remote_ssh cat "$remote_backup" | tar tzf - etc/os-release
-
-        time local_remote_ssh "cat $remote_backup" > /dev/null
-        time local_remote_ssh "cat $remote_backup" |
-            tar -tzf - etc/os-release > /dev/null
-
-        # if local_remote_ssh "cat $remote_backup" |
-        #     tar -tzf - etc/os-release > /dev/null 2>&1 ; then
-
-        #     echo 'os-release exists'
-        #     os_release=$(
-        #         local_remote_ssh "cat $remote_backup" |
-        #             tar -xOzf - etc/os-release 2>/dev/null
-        #     )
-
-        #     echo "$os_release"
-        #     return 0
-        # fi
-
-    done
-    return 1
-}
-
 # Restores a backup from archive
 # param ArrayRef $1 -- array of suggested directories to exclude on restore
 # return null

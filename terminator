@@ -2096,9 +2096,7 @@ perform_system_backup() {
 	return 0
 }
 
-# perform_system_backup
-
-system_backup_location_exclusion
+perform_system_backup
 
 echo >> "$log_file"
 
