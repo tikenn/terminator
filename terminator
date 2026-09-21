@@ -1802,6 +1802,8 @@ system_backup_location_exclusion() {
     	"/lost+found"
 		"/etc/machine-id"
 		"/boot"
+		"/lib/modules"
+		"/etc/initramfs-tools/"
 		"$install_location/backups"
 	)
 	for dir in "${permanent_directory_exclusion_list[@]}" ; do

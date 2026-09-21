@@ -1,0 +1,51 @@
+#!/bin/bash
+##
+# Terminator: backup and maintenance system for servers
+# Copyright 2016 Tim Kennell Jr.
+# Licensed under the MIT License (http://opensource.org/licenses/MIT)
+##
+
+# Performs post-restore checks before the restored system is rebooted.
+
+kernel_version="$(uname -r)"
+errors=0
+
+echo "Running post-restore checks..."
+echo
+echo "Running kernel: $kernel_version"
+echo
+
+# Check kernel image.
+if [[ -f "/boot/vmlinuz-$kernel_version" ]]; then
+    echo "[ OK ] Kernel image: /boot/vmlinuz-$kernel_version"
+else
+    echo "[FAIL] Kernel image missing: /boot/vmlinuz-$kernel_version"
+    ((errors++))
+fi
+
+# Check initramfs.
+if [[ -f "/boot/initrd.img-$kernel_version" ]]; then
+    echo "[ OK ] Initramfs: /boot/initrd.img-$kernel_version"
+else
+    echo "[FAIL] Initramfs missing: /boot/initrd.img-$kernel_version"
+    ((errors++))
+fi
+
+# Check kernel modules.
+if [[ -d "/lib/modules/$kernel_version" ]]; then
+    echo "[ OK ] Kernel modules: /lib/modules/$kernel_version"
+else
+    echo "[FAIL] Kernel modules missing: /lib/modules/$kernel_version"
+    ((errors++))
+fi
+
+echo
+
+if (( errors == 0 )); then
+    echo "Post-restore kernel checks passed."
+    exit 0
+else
+    echo "WARNING: $errors post-restore kernel check(s) failed."
+    echo "Do not reboot until the failures have been investigated."
+    exit 1
+fi

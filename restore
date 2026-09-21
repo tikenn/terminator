@@ -58,7 +58,6 @@ default_restoration_exclusion_list=(
     "etc/hosts"
     "etc/netplan/"
     "etc/default/grub"
-    "etc/initramfs-tools/"
     "${PWD#/}"
 )
 
@@ -92,7 +91,7 @@ validate_numerical_list() {
     local string="$1"
 
     # validate comma-separated list without spaces
-    if [[ $string =~ ^[0-9]+(,[0-9])*$ ]] ; then
+    if [[ $string =~ ^[0-9]*(,[0-9])*$ ]] ; then
         return 0
     else
         return 1
@@ -186,17 +185,16 @@ acquire_user_exclusion_dirs() {
 #               $(create_exclude_string location_list)
 #   )
 # param ArrayRef $1 -- array of directories to exclude
-# return String
-create_exclude_string() {
+# return ArrayRef $2 -- array of exclusion strings for restore tar command
+create_exclude_array() {
     local location_list_name=$1
     local -n _location_list=$location_list_name
-    local exclusion_string=""
+    local exclusion_string_name=$2
+    local -n _return=$exclusion_string_name
 
     for location in "${_location_list[@]}" ; do
-        exclude_string+="--exclude ${location} "
+        _return+=(--exclude "${location}")
     done
-
-    echo "${exclude_string}"
 }
 
 # Restores a backup from archive
@@ -207,7 +205,7 @@ restore() {
     local -n _location_list=$location_list_name
 
     local final_location_list=()
-    local exclusion_string=""
+    local exclude_array=()
     local backup_location=$on_site_host_backup_dir"/systemdump/"
     local backup_levels=()
     local remote_backup=""
@@ -217,15 +215,16 @@ restore() {
 
 
     acquire_user_exclusion_dirs "$location_list_name" final_location_list
-    exclusion_string="$(create_exclude_string final_location_list)"
+    create_exclude_array final_location_list exclude_array
 
     list_backup_levels "$backup_location" backup_levels
     for backup_level in "${backup_levels[@]}" ; do
         local remote_backup="${backup_location}*.level_${backup_level}.tar.gz*"
-        # local_remote_ssh cat "$remote_backup" | \
-        #     tar tzpvf - -C / \
-        #         --numeric-owner \
-        #         "$exclusion_string"
+        local_remote_ssh cat "$remote_backup" | \
+            tar xzpvf - -C / \
+            # tar tzvf - -C / \
+                --numeric-owner \
+                "${exclude_array[@]}"
 
         pipeline_status=("${PIPESTATUS[@]}")
 
