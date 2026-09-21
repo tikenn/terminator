@@ -19,6 +19,9 @@
 # 
 # _array:  can be used locally inside the function to access the ref contents
 
+# Prevents PIPESTATUS from hiding errors of future commands in piped commands
+set -o pipefail
+
 # Since this is a restore, I am going to assume that the curent working 
 #   directory is good enough for an install location
 install_location=$(pwd)
@@ -31,6 +34,9 @@ fi
 # Set up log file
 log_file="$install_location/log/$HOSTNAME.$(date +"%F_%T").log"
 touch "$log_file"
+
+# Force all output (echo) through the log file
+exec > >(tee -a "$log_file") 2>&1
 
 # Check for terminator.conf file
 if ! [[ -f "$install_location/terminator.conf" ]] ; then
@@ -55,6 +61,11 @@ default_restoration_exclusion_list=(
     "etc/initramfs-tools/"
     "${PWD#/}"
 )
+
+# Prints a message to the user with tty so that it is not logged
+user_message() {
+    printf '%s\n' "$@" > /dev/tty
+}
 
 # Checks if an element is an array
 # param ArrayRef $1 -- array to check for a value
@@ -137,25 +148,26 @@ acquire_user_exclusion_dirs() {
     local input_string='invalid string'
     local exclusion_array=()
 
-    echo "List of locations to exclude on restore"
+    user_message "List of locations to exclude on restore"
 
     # Iterate through location list and list them numerically
     for (( i = 0; i < ${#_location_list[@]}; i++ )) ; do
-        echo $((i + 1)). "/"${_location_list[$i]}
+        user_message "$((i + 1)). /${_location_list[$i]}"
 
     done
 
-    echo
-    echo "Please list the numbers of the directories to remove from this list"
+    user_message \
+        "" \
+        "Please list the numbers of the directories to remove from this list"
 
     # Acquire list of locations to remove from restoration exclusion list from user
     while ! validate_numerical_list "$input_string" ; do
-        read -rp "Selection: " input_string
+        read -rp "Selection: " input_string < /dev/tty 2> /dev/tty # outputs read to tty so that user message is not logged
 
         if ! validate_numerical_list "$input_string" ; then
-            echo
-            echo "Invalid input"
-            echo "Please enter a comma-separated list without spaces"
+            user_message \
+                "Invalid input" \
+                "Please enter a comma-separated list without spaces"
         fi
     done
     
@@ -198,6 +210,11 @@ restore() {
     local exclusion_string=""
     local backup_location=$on_site_host_backup_dir"/systemdump/"
     local backup_levels=()
+    local remote_backup=""
+    local pipeline_status=()
+    local ssh_status=0
+    local tar_status=0
+
 
     acquire_user_exclusion_dirs "$location_list_name" final_location_list
     exclusion_string="$(create_exclude_string final_location_list)"
@@ -205,15 +222,32 @@ restore() {
     list_backup_levels "$backup_location" backup_levels
     for backup_level in "${backup_levels[@]}" ; do
         local remote_backup="${backup_location}*.level_${backup_level}.tar.gz*"
-        # local_remote_ssh "ls -1 $remote_backup"
         # local_remote_ssh cat "$remote_backup" | \
         #     tar tzpvf - -C / \
         #         --numeric-owner \
         #         "$exclusion_string"
+
+        pipeline_status=("${PIPESTATUS[@]}")
+
+        ssh_status=${pipeline_status[0]}
+        tar_status=${pipeline_status[1]}
+
+        # SSH errors
+        if (( ssh_status != 0 )) ; then
+            echo "ERROR: SSH failed while restoring backup level $backup_level (status $ssh_status)"
+        fi
+
+        # tar errors
+        if (( tar_status != 0 )) ; then
+            echo "ERROR: tar failed while restoring backup level $backup_level (status $tar_status)"
+        fi
+
+        # terminate script if there are any errors
+        if (( ssh_status != 0 || tar_status != 0 )) ; then
+            return 1
+        fi
+
     done
 }
 
-# restore default_restoration_exclusion_list
 restore default_restoration_exclusion_list
-# list_backup_levels './backups/systemdump' test
-# echo ${test[@]}
