@@ -249,5 +249,4 @@ restore() {
     done
 }
 
-# restore default_restoration_exclusion_list
-acquire_backup_os_info $on_site_host_backup_dir"/systemdump/"
+restore default_restoration_exclusion_list
