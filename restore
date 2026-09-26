@@ -32,7 +32,7 @@ if ! [[ -d "$install_location/log" ]] ; then
 fi
 
 # Set up log file
-log_file="$install_location/log/$HOSTNAME.$(date +"%F_%T").log"
+log_file="$install_location/log/restore-attempt.$(date +"%F_%T").log"
 touch "$log_file"
 
 # Force all output (echo) through the log file
@@ -221,8 +221,8 @@ restore() {
     for backup_level in "${backup_levels[@]}" ; do
         local remote_backup="${backup_location}*.level_${backup_level}.tar.gz*"
         local_remote_ssh cat "$remote_backup" | \
-            tar xzpvf - -C / \
             # tar tzvf - -C / \
+            tar xzpvf - -C / \
                 --numeric-owner \
                 "${exclude_array[@]}"
 
