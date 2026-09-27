@@ -220,11 +220,12 @@ restore() {
     list_backup_levels "$backup_location" backup_levels
     for backup_level in "${backup_levels[@]}" ; do
         local remote_backup="${backup_location}*.level_${backup_level}.tar.gz*"
-        local_remote_ssh cat "$remote_backup" | \
-            # tar tzvf - -C / \
-            tar xzpvf - -C / \
-                --numeric-owner \
-                "${exclude_array[@]}"
+        # local_remote_ssh cat "$remote_backup" | \
+        #     # tar tzvf - -C / \
+        #     tar xzpvf - -C / \
+        #         --numeric-owner \
+        #         "${exclude_array[@]}"
+        echo "$backup_level"
 
         pipeline_status=("${PIPESTATUS[@]}")
 
