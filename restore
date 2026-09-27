@@ -115,8 +115,8 @@ local_remote_ssh() {
 host_login_ok() {
     # ":" is a null operator in bash
     if ! local_remote_ssh ":" ; then
-        echo "Remote Backup Error:  host ($on_site_host_domain) unable to reached; \
-            check host login parameters, firewall settings, and remote server"
+        echo "Remote Backup Error:  host ($on_site_host_domain) unable to reached; "
+        echo -n "check host login parameters, firewall settings, and remote server"
         return 1
     fi
     return 0
