@@ -111,6 +111,17 @@ local_remote_ssh() {
         "$@"
 }
 
+# Checks really quickly for adequate host login possibility
+host_login_ok() {
+    # ":" is a null operator in bash
+    if ! local_remote_ssh ":" ; then
+        echo "Remote Backup Error:  host ($on_site_host_domain) unable to reached; \
+            check host login parameters, firewall settings, and remote server"
+        return 1
+    fi
+    return 0
+}
+
 # Acquires an array of backup levels that exist in the systemdump files
 #   on a remote host
 # param String $1 - backup location
@@ -213,6 +224,10 @@ restore() {
     local ssh_status=0
     local tar_status=0
 
+    # Sanity checks on the server
+    if ! host_login_ok ; then
+        return 1
+    fi
 
     acquire_user_exclusion_dirs "$location_list_name" final_location_list
     create_exclude_array final_location_list exclude_array
