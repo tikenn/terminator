@@ -137,6 +137,25 @@ Terminator provides two methods of modifying the backup behavior.  Both of the o
 - Finally, backups are compressed with `gzip`
 - Remote system backups are streamed immediately to remote hosts setup in `terminator.conf` (see [remote host setup](#remote-host-setup-optional)) during the backup process
 
+### Excluded Files
+Some files are dangerous to restore over a new system due to overwriting unique configurations to a new machine/OS.  As a result, `terminator` permanently excludes a list of files and directories deemed to dangerous for restoration listed below:
+
+* /proc
+* /sys
+* /dev
+* /run
+* /tmp
+* /mnt
+* /media
+* /lost+found
+* /etc/machine-id
+* /boot
+* /lib/modules
+* /etc/initramfs-tools/
+* $install_location/backups
+
+This list is different than files conditionally excluded on [restoration](#conditional-file-restore).
+
 # Terminator.conf Options
 `backup_start`
 - **Description**: install date (YYYY-MM-DD) that controls backup frequency settings
@@ -272,24 +291,86 @@ Please note that this is a MySQL-specific protocol
     `mysql -u <<root_user>> -p < database_file_to_restore.sql`
 
 ## System Restore
-1. Reinstall the same operating system on the same or new machine
-2. Copy ALL files in $BACKUP_DIR/systemdump to the new machine ($BACKUP_DIR: backup directory set in `terminator.conf`)
-3. For each of the backup levels, run the following command, starting with the lowest level and ending with the highest:
-    
-    `sudo cat backup.tar.gz* | sudo tar xzpvf - -C / --numeric-owner`
+The `restore` script has been added to allow for easier system restoration.  Usage is detailed below, but briefly:
 
-4. Run the following command if the directories `/proc`, `/sys`, `/mnt`, or `/media` don't exist after running the command in *3*:
+```bash
+# Restores an entire system from remote backups in terminator.conf
+./restore
 
-    `mkdir /proc /sys /mnt /media`
+# Views the contents of a file in the remote backup to acquire configurations to restore
+./restore view path/to/file
+```
 
-5. (optional) Fixing the `/etc/fstab` file, a process that might be necessary if the operating system identifies the boot partition by UUID
-    1. Reboot the system
-    2. Run `sudo blkid` to identify the name and UUID of the boot partition (usually `/dev/sda1`)
-    3. Open `/etc/fstab` and change the boot partition (typically identified through a comment above the appropriate line and normally an `ext2` file system on Ubuntu)
+### Initial Restoration Process
+This process has been taken over by a script called `restore`, which will restore from a remote backup.  It is crucial to run the `post-restore-checks` after a restore as detailed below.
 
+1. [Install](#installation) the terminator program
+2. Run the `setup` script to build the terminator.conf file
+3. Add the credentials to the [remote host](#remote-host-setup-optional) that contains the backups
+4. Run `restore`
+5. [Select files to include in the restoration](#conditional-file-restore)
 6. (optional) If database restore is necessary, use the most recent file in $BACKUP_DIR/mysqldump with the following command:
 
-    `mysql -u root -p --all-databases < backup.sql`
+    ```bash
+    mysql -u root -p --all-databases < backup.sql
+    ```
+
+### Conditional File Restore
+Though backed up, some files and directories in a backup can cause substantial issues upon overwriting the original files created on OS install.  They are backed up by the system as they might provide configuration information needed in a restored system, but will only be restored if explicitly requested on [restore](#system-restore).  The files are listed below for reference:
+
+* /etc/fstab
+* /etc/hostname
+* /etc/hosts
+* /etc/netplan/
+* /etc/default/grub
+* $install_location
+
+### Post Restore Check
+Since `/boot` is explicitly ignored in backups, there is a risk on system restoration that the package manager and the actual kernel being installed are mismatched requiring a system check **prior** to reboot.  To check for this case and correct if needed, perform the following:
+
+1. Run `post-restore-checks` (remainder of steps assumes a failing output)
+
+    ```bash
+    # Output if ok
+    [ OK ] Kernel image: /boot/vmlinuz-...
+    [ OK ] Initramfs: /boot/initrd.img-...
+    [ OK ] Kernel modules: /lib/modules/...
+
+    # Output on failure
+    [FAIL] Kernel image missing: /boot/vmlinuz-...
+    [FAIL] Initramfs missing: /boot/initrd.img-
+    [FAIL] Kernel modules missing: /lib/modules/...
+
+    ```
+
+2. reinstall the proper kernel (the current one running) with any additional modules
+
+    ```bash
+    sudo apt-get install --reinstall linux-image-$(uname -r) linux-modules-$(uname -r) linux-modules-extra-$(uname -r)
+    ```
+
+3. Regenerate initrams
+
+    ```bash
+    sudo update-initramfs -c -k "$(uname -r)"
+    ```
+
+4. Update the grub
+
+    ```bash
+    sudo update-grub
+    ```
+
+If [WARN] shows up, no action is needed.  The restored package manager recognizes a different version of the kernel from the old machine; however, the current kernel on the new OS will still function.  The package manager and the kernel should be rectified on the next normal kernel update.
+
+### Viewing Individual Files
+Some of the files that are conditionally excluded from restoration may need to be viewed in order to manually restore configurations in files that would otherwise be dangerous to overwrite.  `restore` provides such viewing functionality.  Use the following command structure.
+
+```bash
+./restore view path/to/file
+```
+
+Note that the leading `/` is removed as archives use relative paths.
 
 ## Individual File Restore
 1. To verify the existence of a file in a backup level, use the following command to list all files in a specific directory in a *.tar.gz file for a specific backup level (note that the leading "/" is removed from the path)
