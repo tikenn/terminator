@@ -264,4 +264,51 @@ restore() {
     done
 }
 
-restore default_restoration_exclusion_list
+# Views the contents of a file in the backup
+#       The idea of this function is to be able to peer into conditionally excluded files
+#       for needed configurations
+# param String $1 - name of file to check the contents of
+# returns Null
+view() {
+    local backup_file_to_view=$1
+    local backup_location=$on_site_host_backup_dir"/systemdump/"
+    local final_location_list=()
+    local backup_levels=()
+
+    if [[ -z "$backup_file_to_view" ]] ; then
+        user_message \
+            "Error: no file provided to search"
+            return 1
+    elif [[ "${backup_file_to_view:0:1}" == "/" ]] ; then
+        user_message \
+            "Error:  the path should not begin with \"/\""
+        return 1
+    fi
+
+    list_backup_levels "$backup_location" backup_levels
+
+    for (( i = ${#backup_levels[@]} - 1; i >= 0; i-- )); do
+        local backup_level="${backup_levels[$i]}"
+        local remote_backup="${backup_location}*.level_${backup_level}.tar.gz*"
+
+        user_message "Checking backup level: $backup_level"
+        local_remote_ssh cat "$remote_backup" |
+            tar xOzf - --occurrence=1  "$backup_file_to_view" 2> /dev/null
+        
+        if [[ ${PIPESTATUS[1]} == 0 ]] ; then
+            return 0
+        fi
+    done
+    
+    user_message "The file ($backup_file_to_view) does not exist in the backup files"
+    return 1
+}
+
+if [[ "$1" == "view" ]] ; then
+    view "$2"
+elif [[ -z "$1" ]] ; then
+    # restore default_restoration _exclusion_list
+    echo "debug"
+else
+    user_message "Unrecognized parameter"
+fi

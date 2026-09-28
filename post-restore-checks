@@ -39,6 +39,16 @@ else
     ((errors++))
 fi
 
+# Check package manager and kernel consistency
+if  dpkg -S "/boot/vmlinuz-$(uname -r)" >/dev/null 2>&1 &&
+    dpkg -S "/lib/modules/$(uname -r)" > /dev/null 2>&1
+then
+    echo "[ OK ] Kernel modules and package manager match"
+else
+    echo -n "[WARN] Installed kernel is not recognized by the package manager. "
+    echo "No intervention is necessary and the package manager should fix itself on the next kernel update"
+fi
+
 echo
 
 if (( errors == 0 )); then
@@ -47,5 +57,6 @@ if (( errors == 0 )); then
 else
     echo "WARNING: $errors post-restore kernel check(s) failed."
     echo "Do not reboot until the failures have been investigated."
+    
     exit 1
 fi
