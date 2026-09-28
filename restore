@@ -307,8 +307,7 @@ view() {
 if [[ "$1" == "view" ]] ; then
     view "$2"
 elif [[ -z "$1" ]] ; then
-    # restore default_restoration _exclusion_list
-    echo "debug"
+    restore default_restoration _exclusion_list
 else
     user_message "Unrecognized parameter"
 fi
