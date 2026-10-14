@@ -239,6 +239,9 @@ restore() {
             # tar tzvf - -C / \
             tar xzpvf - -C / \
                 --numeric-owner \
+                --xattrs \
+                --selinux \
+                --acls \
                 "${exclude_array[@]}"
 
         pipeline_status=("${PIPESTATUS[@]}")

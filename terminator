@@ -1847,6 +1847,9 @@ run_tar_command() {
 		--listed-incremental=$snar_file \
 		--exclude=$local_host_backup_dir/$systemdump_dir/* \
 		--sparse \
+		--xattrs \
+		--selinux \
+		--acls \
 		$(system_backup_location_exclusion) \
 		--one-file-system ${system_backup_files[@]} \
 		2>> $log_file | tee "
